@@ -209,31 +209,53 @@ resource "null_resource" "wait_for_ssh" {
   provisioner "local-exec" {
     command = <<-EOT
       echo "Waiting for OceanBase VMs to be ready..."
-      sleep 60
+      
+      # Initial wait for VM boot-up (Azure VMs typically take 2-3 minutes)
+      echo "Waiting 120 seconds for VMs to boot..."
+      sleep 120
       
       # Wait for SSH to be available on all observers
-      for ip in $(echo '${join(",", [for vm in azurerm_linux_virtual_machine.oceanbase_observers : vm.private_ip_address])}' | tr ',' ' '); do
+      observer_ips='${join(" ", [for vm in azurerm_linux_virtual_machine.oceanbase_observers : vm.private_ip_address])}'
+      
+      for ip in $observer_ips; do
         echo "Checking SSH connectivity to $ip..."
-        timeout=300
+        timeout=600  # Increased to 10 minutes
         elapsed=0
+        retry_count=0
+        
         while [ $elapsed -lt $timeout ]; do
-          if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -i ${var.ssh_private_key_path} oceanadmin@$ip "echo 'SSH ready'" 2>/dev/null; then
+          # Try SSH connection
+          if ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ${var.ssh_private_key_path} oceanadmin@$ip "echo 'SSH ready'" >/dev/null 2>&1; then
             echo "✓ SSH ready on $ip"
             break
           fi
-          echo "Waiting for SSH on $ip... ($elapsed seconds)"
+          
+          retry_count=$((retry_count + 1))
+          if [ $((retry_count % 6)) -eq 0 ]; then
+            echo "  Still waiting for SSH on $ip... ($elapsed seconds elapsed)"
+          fi
+          
           sleep 10
           elapsed=$((elapsed + 10))
         done
         
         if [ $elapsed -ge $timeout ]; then
-          echo "✗ Timeout waiting for SSH on $ip"
+          echo "✗ Timeout waiting for SSH on $ip after $timeout seconds"
+          echo ""
+          echo "Troubleshooting:"
+          echo "  1. Check VM status: azure vm show -g control-ob-rg -n $(echo $ip | sed 's/.*\.\([0-9]*\)$/ob-observer-\1/')"
+          echo "  2. Check NSG rules: azure network nsg rule list -g control-ob-rg --nsg-name oceanbase-nsg"
+          echo "  3. Verify SSH key permissions: chmod 600 ${var.ssh_private_key_path}"
           exit 1
         fi
       done
       
-      echo "All OceanBase VMs are SSH accessible!"
+      echo ""
+      echo "✅ All OceanBase VMs are SSH accessible!"
+      echo "   Observer IPs: $observer_ips"
     EOT
+    
+    interpreter = ["/bin/bash", "-c"]
   }
 }
 
