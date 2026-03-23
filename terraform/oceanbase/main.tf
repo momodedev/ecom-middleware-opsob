@@ -1,19 +1,12 @@
-# Resource Group for OceanBase cluster
-resource "azurerm_resource_group" "oceanbase" {
-  name     = var.resource_group_name
-  location = var.resource_group_location
-
-  tags = {
-    Environment = "production"
-    Component   = "oceanbase-cluster"
-    ManagedBy   = "terraform"
-  }
+# Use existing resource group (managed by terraform/manage_node_ob)
+data "azurerm_resource_group" "oceanbase" {
+  name = var.resource_group_name
 }
 
 locals {
-  oceanbase_rg_name     = azurerm_resource_group.oceanbase.name
-  oceanbase_rg_location = azurerm_resource_group.oceanbase.location
-  oceanbase_rg_id       = azurerm_resource_group.oceanbase.id
+  oceanbase_rg_name     = data.azurerm_resource_group.oceanbase.name
+  oceanbase_rg_location = data.azurerm_resource_group.oceanbase.location
+  oceanbase_rg_id       = data.azurerm_resource_group.oceanbase.id
 }
 
 # Look up existing control-node VNet/subnet/NSG
