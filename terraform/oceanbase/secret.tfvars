@@ -18,8 +18,8 @@ oceanbase_memory_limit      = "8G"
 oceanbase_cpu_count         = 8     # Match D8s_v6 (8 vCPUs)
 
 # Network Configuration
-oceanbase_vnet_name         = "oceanbase-vnet"
-oceanbase_subnet_name       = "default"
+oceanbase_vnet_name         = "control-ob-vnet"
+oceanbase_subnet_name       = "control-ob-subnet"
 enable_nat_gateway          = true
 
 # High Availability Configuration
