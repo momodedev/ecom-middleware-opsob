@@ -7,7 +7,7 @@ resource_group_location   = "westus"
 
 # OceanBase Cluster Configuration
 oceanbase_instance_count    = 3  # Recommended: 3 nodes for high availability
-oceanbase_vm_size           = "Standard_D4s_v5"  # Changed from D8s_v5 due to capacity restrictions in westus
+oceanbase_vm_size           = "Standard_D8s_v6"  # Updated to v6 for latest generation
 oceanbase_data_disk_size_gb = 500
 oceanbase_redo_disk_size_gb = 200
 
@@ -15,7 +15,7 @@ oceanbase_redo_disk_size_gb = 200
 oceanbase_cluster_name      = "ob_cluster"
 oceanbase_root_password     = "OceanBase#!123"
 oceanbase_memory_limit      = "8G"
-oceanbase_cpu_count         = 8
+oceanbase_cpu_count         = 8     # Match D8s_v6 (8 vCPUs)
 
 # Network Configuration
 oceanbase_vnet_name         = "oceanbase-vnet"
