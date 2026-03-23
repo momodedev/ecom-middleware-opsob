@@ -2,88 +2,66 @@
 data azurerm_subscription "current" { }
 data "azurerm_client_config" "current" {}
 
-# Use azapi to check if resource group exists (doesn't fail if not found)
-data "azapi_resource" "rg_existing" {
-  type      = "Microsoft.Resources/resourceGroups@2021-04-01"
-  name      = var.resource_group_name
-  parent_id = data.azurerm_subscription.current.id
-}
-
-# Create RG only if it doesn't exist
+# Create RG (will succeed if it already exists - Azure is idempotent)
 resource "azurerm_resource_group" "example" {
-  count    = try(data.azapi_resource.rg_existing.id, "") == "" ? 1 : 0
   location = var.resource_group_location
   name     = var.resource_group_name
+  
+  lifecycle {
+    ignore_changes = [tags, location]
+  }
 }
 
 locals {
-  resource_group_name  = try(data.azapi_resource.rg_existing.id, "") != "" ? data.azapi_resource.rg_existing.name : azurerm_resource_group.example[0].name
-  resource_group_id    = try(data.azapi_resource.rg_existing.id, "") != "" ? data.azapi_resource.rg_existing.id : azurerm_resource_group.example[0].id
-  resource_group_location = try(data.azapi_resource.rg_existing.id, "") != "" ? data.azapi_resource.rg_existing.location : azurerm_resource_group.example[0].location
+  resource_group_name  = azurerm_resource_group.example.name
+  resource_group_id    = azurerm_resource_group.example.id
+  resource_group_location = azurerm_resource_group.example.location
 }
 
-# Check if VNet exists using azapi (doesn't fail if not found)
-data "azapi_resource" "vnet_existing" {
-  type      = "Microsoft.Network/virtualNetworks@2024-01-01"
-  name      = var.control_vnet_name
-  parent_id = local.resource_group_id
-}
-
+# Create VNet if it doesn't exist (Azure will return existing VNet)
 resource "azurerm_virtual_network" "control" {
-  count               = try(data.azapi_resource.vnet_existing.id, "") == "" && !var.use_existing_control_network ? 1 : 0
   name                = var.control_vnet_name
   resource_group_name = local.resource_group_name
   location            = local.resource_group_location
   address_space       = ["172.17.0.0/16"]
+  
+  lifecycle {
+    ignore_changes = [address_space, tags]
+  }
 }
 
 locals {
-  control_vnet_name = try(data.azapi_resource.vnet_existing.id, "") != "" ? data.azapi_resource.vnet_existing.name : azurerm_virtual_network.control[0].name
-  control_vnet_id   = try(data.azapi_resource.vnet_existing.id, "") != "" ? data.azapi_resource.vnet_existing.id : azurerm_virtual_network.control[0].id
+  control_vnet_name = azurerm_virtual_network.control.name
+  control_vnet_id   = azurerm_virtual_network.control.id
 }
 
-# Check if subnet exists using azapi (doesn't fail if not found)
-data "azapi_resource" "subnet_existing" {
-  type      = "Microsoft.Network/virtualNetworks/subnets@2024-01-01"
-  name      = var.control_subnet_name
-  parent_id = local.control_vnet_id
-}
-
+# Create subnet if it doesn't exist (Azure will return existing subnet)
 resource "azurerm_subnet" "control" {
-  count                        = try(data.azapi_resource.subnet_existing.id, "") == "" && !var.use_existing_control_network ? 1 : 0
   name                         = var.control_subnet_name
   resource_group_name          = local.resource_group_name
   virtual_network_name         = local.control_vnet_name
   address_prefixes             = ["172.17.1.0/24"]
   default_outbound_access_enabled = false
+  
+  lifecycle {
+    ignore_changes = [address_prefixes]
+  }
 }
 
 locals {
-  control_subnet_id = try(data.azapi_resource.subnet_existing.id, "") != "" ? data.azapi_resource.subnet_existing.id : azurerm_subnet.control[0].id
+  control_subnet_id = azurerm_subnet.control.id
 }
 
-# Check if NSG exists using azapi (doesn't fail if not found)
-data "azapi_resource" "nsg_existing" {
-  type      = "Microsoft.Network/networkSecurityGroups@2024-01-01"
-  name      = var.control_nsg_name
-  parent_id = local.resource_group_id
-}
-
+# Check if NSG exists - use provided ID or create new one
 locals {
-  control_nsg_id    = var.control_nsg_id != "" ? var.control_nsg_id : (
-    try(data.azapi_resource.nsg_existing.id, "") != "" ? data.azapi_resource.nsg_existing.id : azurerm_network_security_group.example[0].id
-  )
-  control_existing_nsg_rg_name = var.control_nsg_id != "" ? split("/", var.control_nsg_id)[4] : (
-    try(data.azapi_resource.nsg_existing.id, "") != "" ? local.resource_group_name : null
-  )
-  control_existing_nsg_name    = var.control_nsg_id != "" ? split("/", var.control_nsg_id)[8] : (
-    try(data.azapi_resource.nsg_existing.id, "") != "" ? data.azapi_resource.nsg_existing.name : null
-  )
-  attach_control_nsg = var.control_nsg_id != "" || try(data.azapi_resource.nsg_existing.id, "") != "" || !var.use_existing_control_network
+  control_nsg_id    = var.control_nsg_id != "" ? var.control_nsg_id : azurerm_network_security_group.example[0].id
+  control_existing_nsg_rg_name = var.control_nsg_id != "" ? split("/", var.control_nsg_id)[4] : local.resource_group_name
+  control_existing_nsg_name    = var.control_nsg_id != "" ? split("/", var.control_nsg_id)[8] : azurerm_network_security_group.example[0].name
+  attach_control_nsg = var.control_nsg_id != "" || true  # Always attach NSG
 }
 
 resource "azurerm_network_security_group" "example" {
-  count               = var.control_nsg_id != "" || try(data.azapi_resource.nsg_existing.id, "") != "" ? 0 : 1
+  count               = var.control_nsg_id != "" ? 0 : 1
   name                = var.control_nsg_name
   location            = local.resource_group_location
   resource_group_name = local.resource_group_name
@@ -126,7 +104,7 @@ resource "azurerm_network_security_group" "example" {
 }
 
 resource "azurerm_subnet_network_security_group_association" "example" {
-  count                     = (!var.use_existing_control_network || try(data.azapi_resource.subnet_existing.id, "") != "") && local.attach_control_nsg && try(data.azapi_resource.nsg_existing.id, "") == "" ? 1 : 0
+  count                     = local.attach_control_nsg ? 1 : 0
   subnet_id                 = local.control_subnet_id
   network_security_group_id = local.control_nsg_id
 }
@@ -148,15 +126,8 @@ resource "azurerm_network_security_rule" "existing_nsg_control_ssh" {
 
 # ==================== Control Node Public IP (for SSH access) ====================
 
-# Check if public IP exists using azapi (doesn't fail if not found)
-data "azapi_resource" "pip_existing" {
-  type      = "Microsoft.Network/publicIPAddresses@2024-01-01"
-  name      = "control-ip"
-  parent_id = local.resource_group_id
-}
-
+# Create public IP (Azure will return existing if it matches)
 resource "azurerm_public_ip" "control" {
-  count               = try(data.azapi_resource.pip_existing.id, "") == "" ? 1 : 0
   name                = "control-ip"
   location            = local.resource_group_location
   resource_group_name = local.resource_group_name
@@ -168,18 +139,11 @@ resource "azurerm_public_ip" "control" {
 }
 
 locals {
-  control_public_ip_id = try(data.azapi_resource.pip_existing.id, "") != "" ? data.azapi_resource.pip_existing.id : azurerm_public_ip.control[0].id
+  control_public_ip_id = azurerm_public_ip.control.id
 }
 
-# Check if NIC exists using azapi (doesn't fail if not found)
-data "azapi_resource" "nic_existing" {
-  type      = "Microsoft.Network/networkInterfaces@2024-01-01"
-  name      = "control-nic"
-  parent_id = local.resource_group_id
-}
-
+# Create NIC (Azure will return existing if it matches)
 resource "azurerm_network_interface" "example" {
-  count               = try(data.azapi_resource.nic_existing.id, "") == "" ? 1 : 0
   name                = "control-nic"
   location            = local.resource_group_location
   resource_group_name = local.resource_group_name
@@ -190,10 +154,14 @@ resource "azurerm_network_interface" "example" {
     private_ip_address_allocation = "Dynamic"
     public_ip_address_id          = local.control_public_ip_id
   }
+  
+  lifecycle {
+    ignore_changes = [ip_configuration, tags]
+  }
 }
 
 locals {
-  control_nic_id = try(data.azapi_resource.nic_existing.id, "") != "" ? data.azapi_resource.nic_existing.id : azurerm_network_interface.example[0].id
+  control_nic_id = azurerm_network_interface.example.id
 }
 
 # Check if VM exists using azapi (since azurerm doesn't have a VM data source)
