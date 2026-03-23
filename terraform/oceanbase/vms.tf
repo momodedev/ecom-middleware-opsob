@@ -91,7 +91,7 @@ resource "azurerm_linux_virtual_machine" "oceanbase_observers" {
   }
 
   lifecycle {
-    ignore_changes = [tags, zones]
+    ignore_changes = [tags]
   }
 }
 

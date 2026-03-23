@@ -63,7 +63,7 @@ output "oceanbase_connection_info" {
     rpc_port        = 2882
     obshell_port    = 2886
     root_password   = var.oceanbase_root_password
-    private_ips     = join(",", observer_private_ips.value)
+    private_ips     = join(",", [for vm in azurerm_linux_virtual_machine.oceanbase_observers : vm.private_ip_address])
     ssh_user        = "oceanadmin"
     ssh_command     = "ssh -i ${var.ssh_private_key_path} oceanadmin@<observer-private-ip>"
   }
