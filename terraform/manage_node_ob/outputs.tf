@@ -23,7 +23,7 @@ output "control_private_ip" {
 
 output "control_vm_name" {
   description = "Name of the control node virtual machine."
-  value       = local.control_vm_id != "" ? (try(data.azapi_resource.vm_existing.id, "") != "" ? data.azapi_resource.vm_existing.name : azurerm_linux_virtual_machine.example[0].name) : "not-created"
+  value       = azurerm_linux_virtual_machine.example.name
 }
 
 output "control_vm_size" {
@@ -84,13 +84,13 @@ output "deploy_mode" {
 output "existing_resources_summary" {
   description = "Summary of existing resources found in Azure"
   value = {
-    resource_group_exists   = true  # Always exists since we create it
-    vnet_exists             = true  # Always exists since we create it
-    subnet_exists           = true  # Always exists since we create it
-    nsg_exists              = var.control_nsg_id != "" || true  # Always has NSG
-    public_ip_exists        = true  # Always exists since we create it
-    nic_exists              = true  # Always exists since we create it
-    vm_exists               = try(data.azapi_resource.vm_existing.id, "") != ""
+    resource_group_exists   = true
+    vnet_exists             = true
+    subnet_exists           = true
+    nsg_exists              = var.control_nsg_id != "" || true
+    public_ip_exists        = true
+    nic_exists              = true
+    vm_exists               = true
     role_assignment_exists  = local.control_vm_principal_id != ""
   }
 }

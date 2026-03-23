@@ -150,9 +150,9 @@ resource "azurerm_network_interface" "example" {
 
   ip_configuration {
     name                          = "internal"
-    subnet_id                     = local.control_subnet_id
+    subnet_id                     = azurerm_subnet.control.id
     private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = local.control_public_ip_id
+    public_ip_address_id          = azurerm_public_ip.control.id
   }
   
   lifecycle {
@@ -164,21 +164,13 @@ locals {
   control_nic_id = azurerm_network_interface.example.id
 }
 
-# Check if VM exists using azapi (since azurerm doesn't have a VM data source)
-data "azapi_resource" "vm_existing" {
-  type      = "Microsoft.Compute/virtualMachines@2024-03-01"
-  name      = "control-node"
-  parent_id = local.resource_group_id
-}
-
 resource "azurerm_linux_virtual_machine" "example" {
-  count               = try(data.azapi_resource.vm_existing.id, "") == "" ? 1 : 0
   name                = "control-node"
   resource_group_name = local.resource_group_name
   location            = local.resource_group_location
   size                = var.control_vm_size
   network_interface_ids = [
-    local.control_nic_id,
+    azurerm_network_interface.example.id,
   ]
 
   computer_name  = "control"
@@ -224,17 +216,14 @@ resource "azurerm_linux_virtual_machine" "example" {
 }
 
 locals {
-  control_vm_id = try(data.azapi_resource.vm_existing.id, "") != "" ? data.azapi_resource.vm_existing.id : azurerm_linux_virtual_machine.example[0].id
-  # For existing VMs, we need to read the principal ID separately using azapi_resource_action or output
-  # For now, set to empty string if VM exists but wasn't created by us
-  control_vm_principal_id = azurerm_linux_virtual_machine.example[0].identity[0].principal_id
+  control_vm_id = azurerm_linux_virtual_machine.example.id
+  control_vm_principal_id = try(azurerm_linux_virtual_machine.example.identity[0].principal_id, "")
 }
 
 # Role assignment will always be created if VM is created
 # We can't check for existing role assignments with azurerm provider
 # So we'll use try() to handle cases where it might not exist yet
 resource "azurerm_role_assignment" "control" {
-  count                = local.control_vm_principal_id != "" ? 1 : 0
   scope                = data.azurerm_subscription.current.id
   role_definition_name = "Contributor"
   principal_id         = local.control_vm_principal_id
