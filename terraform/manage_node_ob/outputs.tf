@@ -13,12 +13,12 @@ output "resource_group_location" {
 
 output "control_public_ip" {
   description = "Public IP address of the control node VM."
-  value       = try(data.azapi_resource.pip_existing.id, "") != "" ? jsondecode(data.azapi_resource.pip_existing.output).properties.ipAddress : azurerm_public_ip.control[0].ip_address
+  value       = try(data.azapi_resource.pip_existing.id, "") != "" ? data.azapi_resource.pip_existing.properties.ipAddress : azurerm_public_ip.control[0].ip_address
 }
 
 output "control_private_ip" {
   description = "Private IP address of the control node VM."
-  value       = try(data.azapi_resource.nic_existing.id, "") != "" ? jsondecode(data.azapi_resource.nic_existing.output).properties.ipConfigurations[0].properties.privateIPAddress : azurerm_network_interface.example[0].private_ip_address
+  value       = try(data.azapi_resource.nic_existing.id, "") != "" ? data.azapi_resource.nic_existing.properties.ipConfigurations[0].properties.privateIPAddress : azurerm_network_interface.example[0].private_ip_address
 }
 
 output "control_vm_name" {
@@ -53,17 +53,17 @@ output "control_nsg_id" {
 
 output "ssh_command" {
   description = "SSH command to connect to the control node."
-  value       = "ssh -p ${var.control_ssh_port} azureadmin@${try(data.azapi_resource.pip_existing.id, "") != "" ? jsondecode(data.azapi_resource.pip_existing.output).properties.ipAddress : azurerm_public_ip.control[0].ip_address}"
+  value       = "ssh -p ${var.control_ssh_port} azureadmin@${try(data.azapi_resource.pip_existing.id, "") != "" ? data.azapi_resource.pip_existing.properties.ipAddress : azurerm_public_ip.control[0].ip_address}"
 }
 
 output "grafana_url" {
   description = "URL to access Grafana dashboard."
-  value       = "http://${try(data.azapi_resource.pip_existing.id, "") != "" ? jsondecode(data.azapi_resource.pip_existing.output).properties.ipAddress : azurerm_public_ip.control[0].ip_address}:3000"
+  value       = "http://${try(data.azapi_resource.pip_existing.id, "") != "" ? data.azapi_resource.pip_existing.properties.ipAddress : azurerm_public_ip.control[0].ip_address}:3000"
 }
 
 output "prometheus_url" {
   description = "URL to access Prometheus metrics server."
-  value       = "http://${try(data.azapi_resource.pip_existing.id, "") != "" ? jsondecode(data.azapi_resource.pip_existing.output).properties.ipAddress : azurerm_public_ip.control[0].ip_address}:9090"
+  value       = "http://${try(data.azapi_resource.pip_existing.id, "") != "" ? data.azapi_resource.pip_existing.properties.ipAddress : azurerm_public_ip.control[0].ip_address}:9090"
 }
 
 output "control_managed_identity_principal_id" {
@@ -87,7 +87,7 @@ output "existing_resources_summary" {
     resource_group_exists   = try(data.azapi_resource.rg_existing.id, "") != ""
     vnet_exists             = try(data.azapi_resource.vnet_existing.id, "") != ""
     subnet_exists           = try(data.azapi_resource.subnet_existing.id, "") != ""
-    nsg_exists              = try(data.azapi_resource.nsg_existing.id, "") != "" || var.control_nsg_id != ""
+    nsg_exists              = var.control_nsg_id != "" || try(data.azapi_resource.nsg_existing.id, "") != ""
     public_ip_exists        = try(data.azapi_resource.pip_existing.id, "") != ""
     nic_exists              = try(data.azapi_resource.nic_existing.id, "") != ""
     vm_exists               = try(data.azapi_resource.vm_existing.id, "") != ""
