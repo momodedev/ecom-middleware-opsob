@@ -178,7 +178,6 @@ variable "control_resource_group_name" {
 variable "control_vnet_name" {
   type        = string
   default     = "control-vnet"
-  description = "Name of the control node Virtual Network for VNet peering."
   description = "Name of the existing control-node Virtual Network where OceanBase observers will be deployed."
 }
 
