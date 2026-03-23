@@ -92,3 +92,41 @@ output "deployment_summary" {
     vnet_peering_enabled = var.enable_vnet_peering && var.deploy_mode == "together"
   }
 }
+
+output "deployment_status" {
+  description = "Automated deployment status and next steps."
+  value = {
+    infrastructure_deployed = true
+    oceanbase_deployed      = null_resource.deploy_oceanbase.id != ""
+    monitoring_deployed     = null_resource.deploy_monitoring.id != ""
+    
+    connection_info = {
+      cluster_name    = var.oceanbase_cluster_name
+      mysql_port      = var.oceanbase_mysql_port
+      rpc_port        = 2882
+      obshell_port    = 2886
+      root_password   = var.oceanbase_root_password
+      private_ips     = join(",", [for vm in azurerm_linux_virtual_machine.oceanbase_observers : vm.private_ip_address])
+      ssh_user        = "oceanadmin"
+      ssh_command     = "ssh -i ${var.ssh_private_key_path} oceanadmin@<observer-private-ip>"
+    }
+    
+    monitoring_access = {
+      grafana_url     = "http://<control-node-public-ip>:3000"
+      prometheus_url  = "http://<control-node-public-ip>:9090"
+      default_user    = "admin"
+      default_password = "admin"
+    }
+    
+    next_steps = [
+      "1. SSH to any observer: ssh -i ${var.ssh_private_key_path} oceanadmin@${azurerm_linux_virtual_machine.oceanbase_observers[0].private_ip_address}",
+      "2. Switch to admin user: su - admin",
+      "3. Load OceanBase environment: source ~/.oceanbase-all-in-one/bin/env.sh",
+      "4. List clusters: obd cluster list",
+      "5. Display cluster: obd cluster display ${var.oceanbase_cluster_name}",
+      "6. Connect to database: obclient -h127.0.0.1 -P${var.oceanbase_mysql_port} -uroot@sys -p'${var.oceanbase_root_password}' -Doceanbase -A",
+      "7. Access Grafana: http://<control-node-public-ip>:3000 (admin/admin)"
+    ]
+  }
+  sensitive = true
+}

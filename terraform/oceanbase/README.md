@@ -1,15 +1,15 @@
-# OceanBase Cluster Deployment on Azure
+# OceanBase Cluster Deployment on Azure - Fully Automated
 
 ## 📋 概述
 
-本项目实现了在 Microsoft Azure 上自动化部署 OceanBase 分布式数据库集群，包括完整的监控和运维工具栈。
+本项目实现了在 Microsoft Azure 上一键自动化部署 OceanBase 分布式数据库集群，包括完整的监控和运维工具栈。**只需一条命令即可完成全部部署**。
 
 ## 🏗️ 架构设计
 
 ### 系统架构
 
 ```
-Internet → Control Node (Public IP)
+Internet → Control Node (Public IP: 6666)
                     ↓
               VNet Peering
                     ↓
@@ -41,8 +41,10 @@ OceanBase Observers (3 nodes, Private IPs)
 | 22 | TCP | SSH | 内网 |
 | 9100 | TCP | Node Exporter | 内网 |
 | 9308 | TCP | OceanBase Exporter | 内网 |
+| 3000 | TCP | Grafana | 公网 (via control node) |
+| 9090 | TCP | Prometheus | 公网 (via control node) |
 
-## 🚀 快速开始
+## 🚀 快速开始 - 一键部署
 
 ### 前置要求
 
@@ -56,19 +58,47 @@ OceanBase Observers (3 nodes, Private IPs)
    - Terraform v1.x+
    - Git
    - jq (用于脚本处理)
+   - Bash
 
 ### 部署步骤
 
-#### 1. 配置环境变量
+#### 方法一：使用自动化脚本（推荐）
 
-编辑 `terraform/oceanbase/secret.tfvars` 文件：
+```bash
+# 进入 Terraform 目录
+cd terraform/oceanbase
+
+# 配置环境变量
+cp secret.tfvars.example secret.tfvars
+# 编辑 secret.tfvars，填入实际的订阅 ID 和密码
+
+# 运行自动化部署脚本
+./deploy.sh
+```
+
+**部署时间**：约 30-45 分钟
+
+脚本会自动完成：
+1. ✅ 初始化 Terraform
+2. ✅ 部署 Azure 基础设施（Resource Group, VNet, VMs, Disks）
+3. ✅ 等待 VM 准备就绪并验证 SSH 连接
+4. ✅ 自动生成 Ansible inventory
+5. ✅ 部署 OceanBase 集群
+6. ✅ 部署监控工具（Grafana + Prometheus）
+7. ✅ 显示连接信息和下一步操作指南
+
+#### 方法二：手动分步部署
+
+##### 1. 配置环境变量
+
+编辑 `secret.tfvars` 文件：
 
 ```hcl
 # Azure 订阅 ID（必需）
 ARM_SUBSCRIPTION_ID = "your-subscription-id-here"
 
 # 资源组配置
-resource_group_name       = "oceanbase-cluster"
+resource_group_name       = "control-ob-rg"
 resource_group_location   = "westus"
 
 # OceanBase 集群配置
@@ -79,20 +109,15 @@ oceanbase_redo_disk_size_gb = 200
 
 # OceanBase 参数
 oceanbase_cluster_name      = "ob_cluster"
-oceanbase_root_password     = "OceanBase#!123"  # 请修改为强密码
+oceanbase_root_password     = "OceanBase#!123"  # 请修改为强密码！
 oceanbase_memory_limit      = "8G"
 oceanbase_cpu_count         = 8
 
-# 网络配置
-enable_nat_gateway          = true
-enable_availability_zones   = true
-enable_vnet_peering         = true
-
 # 部署模式
-deploy_mode                 = "separate"  # 或 "together"
+deploy_mode                 = "together"  # 与控制节点一起部署
 ```
 
-#### 2. 初始化 Terraform
+##### 2. 部署基础设施
 
 ```bash
 cd terraform/oceanbase
@@ -103,46 +128,33 @@ terraform init
 # 预览部署计划
 terraform plan -var-file='secret.tfvars'
 
-# 执行部署
+# 执行部署（这将创建所有 Azure 资源并自动触发 Ansible 部署）
 terraform apply -var-file='secret.tfvars'
 ```
 
-**部署时间**：约 10-15 分钟
+**注意**：`terraform apply` 会自动：
+- 创建所有 Azure 资源
+- 等待 VM 准备就绪
+- 运行 Ansible playbook 部署 OceanBase
+- 部署监控工具到控制节点
 
-#### 3. 生成 Ansible Inventory
+##### 3. 获取访问信息
 
 ```bash
-# 返回项目根目录
-cd ../../ansible
+# 查看部署摘要
+terraform output deployment_summary
 
-# 运行 inventory 生成脚本
-./scripts/generate_oceanbase_inventory.sh
+# 查看连接信息
+terraform output oceanbase_connection_info
 
-# 查看生成的 inventory
-cat inventory/oceanbase_hosts
+# 查看监控访问信息
+terraform output monitoring_urls
 ```
 
-#### 4. 部署 OceanBase 集群
+##### 4. 连接到 OceanBase
 
 ```bash
-# 激活 Ansible 虚拟环境（如果有）
-source ~/ansible-venv/bin/activate
-
-# 验证 SSH 连接
-ansible all -i inventory/oceanbase_hosts -m ping
-
-# 部署 OceanBase 集群
-ansible-playbook -i inventory/oceanbase_hosts playbooks/deploy_oceanbase_cluster.yml
-```
-
-**部署时间**：约 15-20 分钟
-
-#### 5. 验证部署
-
-SSH 到任意 observer 节点：
-
-```bash
-# 获取 observer IP
+# 获取第一个 observer 的 IP
 OBSERVER_IP=$(terraform output -json observer_private_ips | jq -r '.[0]')
 
 # SSH 到 observer
@@ -166,6 +178,17 @@ obclient -h127.0.0.1 -P2881 -uroot@sys -p'OceanBase#!123' -Doceanbase -A
 # 执行 SQL 查询
 MySQL [oceanbase]> SELECT * FROM oceanbase.__all_server;
 ```
+
+##### 5. 访问监控仪表板
+
+1. **Grafana** (http://\<control-node-public-ip\>:3000)
+   - 默认账号：`admin`
+   - 默认密码：`admin`
+   - OceanBase Dashboard: `/d/oceanbase`
+
+2. **Prometheus** (http://\<control-node-public-ip\>:9090)
+   - 查看指标
+   - 配置告警规则
 
 ## 📊 监控与运维
 

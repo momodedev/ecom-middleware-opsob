@@ -95,6 +95,12 @@ variable "oceanbase_root_password" {
   sensitive   = true
 }
 
+variable "oceanbase_mysql_port" {
+  description = "MySQL port for OceanBase observer"
+  type        = number
+  default     = 2881
+}
+
 variable "oceanbase_memory_limit" {
   description = "Memory limit for OceanBase observer (e.g., '8G', '16G')"
   type        = string
