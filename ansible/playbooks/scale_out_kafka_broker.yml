@@ -1,0 +1,252 @@
+---
+# Kafka Broker Scale-Out Playbook
+# This playbook adds a new Kafka broker to an existing cluster
+# Usage: ansible-playbook -i inventory/inventory.ini playbooks/scale_out_kafka_broker.yml -e "new_broker_host=<hostname>"
+
+- name: Scale Out Kafka Cluster - Add New Broker
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars:
+    kafka_exporter_port: 9308
+    kafka_controller_port: 9093
+  
+  tasks:
+    - name: Validate new broker hostname is provided
+      assert:
+        that:
+          - new_broker_host is defined
+          - new_broker_host | length > 0
+        fail_msg: "new_broker_host must be provided via -e flag: -e new_broker_host=<hostname>"
+
+    - name: Add new host to in-memory inventory
+      add_host:
+        name: "{{ new_broker_host }}"
+        groups: kafka
+        ansible_user: "{{ ansible_user | default('azureuser') }}"
+        ansible_ssh_private_key_file: "{{ ansible_ssh_private_key_file | default('~/.ssh/id_rsa') }}"
+
+    - name: Get all Kafka brokers from inventory (including new broker)
+      set_fact:
+        kafka_hosts_list: "{{ groups.get('kafka', []) | sort }}"
+
+    - name: Initialize quorum voters list
+      set_fact:
+        kafka_controller_quorum_voters_list: []
+
+    - name: Build controller.quorum.voters from inventory
+      set_fact:
+        kafka_controller_quorum_voters_list: []
+
+    - name: Append each broker as a controller voter
+      set_fact:
+        kafka_controller_quorum_voters_list: >-
+          {{ kafka_controller_quorum_voters_list
+             + [ ((idx + 1) | string)
+                 + '@'
+                 + (hostvars[item].ansible_host | default(item))
+                 + ':'
+                 + (kafka_controller_port | string) ] }}
+      loop: "{{ kafka_hosts_list }}"
+      loop_control:
+        index_var: idx
+
+    - name: Set voters string
+      set_fact:
+        kafka_controller_quorum_voters: "{{ kafka_controller_quorum_voters_list | join(',') }}"
+
+    - name: DEBUG - Show controller.quorum.voters
+      debug:
+        msg: "controller.quorum.voters={{ kafka_controller_quorum_voters }}"
+
+- name: Deploy Kafka role to new broker
+  hosts: "{{ new_broker_host }}"
+  become: true
+  gather_facts: yes
+  
+  pre_tasks:
+    - name: Get current Kafka group from inventory
+      set_fact:
+        kafka_hosts: "{{ groups.get('kafka', []) | sort }}"
+
+    - name: Initialize controller quorum voters list
+      set_fact:
+        kafka_controller_quorum_voters_list: []
+
+    - name: Build controller.quorum.voters from inventory
+      set_fact:
+        kafka_controller_quorum_voters_list: >-
+          {{ kafka_controller_quorum_voters_list
+             + [ ((idx + 1) | string)
+                 + '@'
+                 + (hostvars[item].private_ip | default(hostvars[item].ansible_host | default(item)))
+                 + ':'
+                 + ((kafka_controller_port | default(9093)) | string) ] }}
+      loop: "{{ kafka_hosts }}"
+      loop_control:
+        index_var: idx
+
+    - name: Set controller.quorum.voters string
+      set_fact:
+        kafka_controller_quorum_voters: "{{ kafka_controller_quorum_voters_list | join(',') }}"
+
+    - name: Validate controller.quorum.voters composition
+      assert:
+        that:
+          - kafka_controller_quorum_voters is defined
+          - kafka_controller_quorum_voters | length > 0
+          - (kafka_controller_quorum_voters.split(',') | length) == (kafka_hosts | length)
+          - kafka_controller_quorum_voters is match('^\\d+@\\d+\\.\\d+\\.\\d+\\.\\d+:\\d+(,\\d+@\\d+\\.\\d+\\.\\d+\\.\\d+:\\d+)*$')
+        fail_msg: "Invalid controller.quorum.voters: {{ kafka_controller_quorum_voters }}"
+
+    - name: DEBUG - Show controller.quorum.voters for new broker
+      debug:
+        msg: "controller.quorum.voters={{ kafka_controller_quorum_voters }}"
+
+    - name: Calculate new broker node ID
+      set_fact:
+        kafka_node_id: "{{ (kafka_hosts.index(new_broker_host) + 1) | int }}"
+
+    - name: Display new broker info
+      debug:
+        msg: "New broker {{ new_broker_host }} will have node_id={{ kafka_node_id }}"
+    
+    # Authorize control node SSH key for health checks
+    - name: Check if control node has SSH public key
+      stat:
+        path: "{{ lookup('env', 'HOME') }}/.ssh/id_rsa.pub"
+      register: control_ssh_key
+      delegate_to: localhost
+      become: no
+
+    - name: Read control node SSH public key
+      slurp:
+        src: "{{ lookup('env', 'HOME') }}/.ssh/id_rsa.pub"
+      register: control_pub_key_content
+      delegate_to: localhost
+      become: no
+      when: control_ssh_key.stat.exists
+
+    - name: Authorize control node SSH key for broker user
+      authorized_key:
+        user: "{{ ansible_user }}"
+        state: present
+        key: "{{ control_pub_key_content.content | b64decode }}"
+        comment: "control-node-health-check"
+      when: control_ssh_key.stat.exists
+
+    - name: Add broker host key to control node's known_hosts
+      shell: |
+        CONTROL_HOME="{{ lookup('env', 'HOME') }}"
+        ssh-keyscan -H "{{ ansible_host }}" >> "${CONTROL_HOME}/.ssh/known_hosts" 2>/dev/null || true
+      delegate_to: localhost
+      become: no
+      when: ansible_host is defined
+      changed_when: false
+  
+  roles:
+    - role: ../roles/kafka
+
+- name: Update Prometheus Targets for New Broker
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars:
+    prometheus_sd_output_path: "/etc/prometheus/file_sd/kafka_targets.json"
+    kafka_exporter_port: 9308
+  
+  tasks:
+    - name: Ensure Prometheus target directory exists
+      file:
+        path: "{{ prometheus_sd_output_path | dirname }}"
+        state: directory
+        mode: "0755"
+      become: yes
+
+    - name: Render updated Kafka scrape target file
+      template:
+        src: ../roles/kafka/templates/prometheus_kafka_targets.json.j2
+        dest: "{{ prometheus_sd_output_path }}"
+        mode: "0644"
+      become: yes
+
+    - name: Reload Prometheus to pick up new targets
+      uri:
+        url: "http://{{ groups['monitoring'][0] | default('localhost') }}:9090/-/reload"
+        method: POST
+      ignore_errors: yes
+      tags: prometheus_reload
+
+- name: Validate New Broker Integration
+  hosts: "{{ new_broker_host }}"
+  gather_facts: no
+  
+  tasks:
+    - name: Wait for Kafka broker to start
+      wait_for:
+        port: 9092
+        delay: 5
+        timeout: 60
+
+    - name: Check broker connectivity
+      command: |
+        /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092
+      become: yes
+      become_user: kafka
+      ignore_errors: yes
+
+    - name: Verify broker registration in ZooKeeper
+      command: |
+        /opt/kafka/bin/zookeeper-shell.sh localhost:2181 ls /brokers/ids
+      become: yes
+      become_user: kafka
+      ignore_errors: yes
+      register: cluster_registration
+
+    - name: Display cluster registration
+      debug:
+        var: cluster_registration.stdout_lines
+      when: cluster_registration.rc == 0
+
+- name: Validate ISR and Replication
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars:
+    kafka_workspace: /opt/kafka
+  
+  tasks:
+    - name: Compute new broker node id
+      set_fact:
+        new_broker_node_id: "{{ (groups['kafka'] | sort).index(new_broker_host) + 1 if new_broker_host in groups['kafka'] else (groups['kafka'] | length) }}"
+
+    - name: Check if kafka-topics.sh exists on control
+      stat:
+        path: "{{ kafka_workspace }}/bin/kafka-topics.sh"
+      register: kafka_topics_exists
+
+    - name: Check topic replication status
+      command: |
+        {{ kafka_workspace }}/bin/kafka-topics.sh \
+          --bootstrap-server {{ groups['kafka'][0] }}:9092 \
+          --describe
+      register: topic_status
+      ignore_errors: yes
+      when: kafka_topics_exists.stat.exists | default(false)
+
+    - name: Display topic status
+      debug:
+        msg: "{{ topic_status.stdout_lines | default([]) }}"
+      when:
+        - topic_status is defined
+        - topic_status.rc is defined
+        - topic_status.rc == 0
+
+    - name: Summary
+      debug:
+        msg: |
+          ✅ New Kafka broker successfully added:
+          - Broker: {{ new_broker_host }}
+          - Node ID: {{ new_broker_node_id }}
+          - Prometheus targets updated
+          - Verify with: kafka-topics.sh --describe

@@ -1,0 +1,47 @@
+---
+- name: Kafka Cluster Status Summary
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Check Kafka service active
+      command: systemctl is-active kafka
+      register: kafka_active
+      ignore_errors: true
+
+    - name: Get recent Kafka journal entries
+      shell: journalctl -u kafka -n 50 --no-pager
+      register: kafka_journal
+      ignore_errors: true
+
+    - name: Check open broker ports (9092/9093/9094)
+      shell: ss -tulpen | grep -E ':(9092|9093|9094)' || true
+      register: open_ports
+
+    - name: Check Kafka exporter metrics presence
+      shell: curl -s http://{{ ansible_host }}:9308/metrics | grep -q "kafka_" && echo "OK" || echo "FAIL"
+      register: exporter_metrics
+      ignore_errors: true
+
+    - name: Broker API versions (first line)
+      shell: /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server {{ ansible_host }}:9092 | head -1
+      args:
+        executable: /bin/bash
+      register: api_versions
+      ignore_errors: true
+
+    - name: Topics describe (first lines)
+      shell: /opt/kafka/bin/kafka-topics.sh --bootstrap-server {{ ansible_host }}:9092 --describe | head -20
+      args:
+        executable: /bin/bash
+      register: topics_desc
+      ignore_errors: true
+
+    - name: Summarize per-host
+      debug:
+        msg:
+          - "Host: {{ inventory_hostname }} ({{ ansible_host }})"
+          - "Service: {{ kafka_active.stdout | default('unknown') }}"
+          - "Ports: {{ open_ports.stdout | default('none') }}"
+          - "Exporter: {{ exporter_metrics.stdout | default('N/A') }}"
+          - "API: {{ api_versions.stdout | default('N/A') }}"
+          - "Topics (first lines):\n{{ topics_desc.stdout | default('N/A') }}"

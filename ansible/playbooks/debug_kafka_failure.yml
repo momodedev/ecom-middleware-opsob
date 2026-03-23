@@ -1,0 +1,32 @@
+---
+- name: Debug Kafka Logs on Failure
+  hosts: all
+  become: yes
+  gather_facts: false
+  tasks:
+    - name: Get Service Status
+      command: systemctl status kafka -l --no-pager
+      register: service_status
+      ignore_errors: true
+
+    - name: Get Kafka Server Logs (Tail)
+      command: tail -n 50 /opt/kafka/logs/server.log
+      register: kafka_logs
+      ignore_errors: true
+      
+    - name: Get Kafka Server Logs (Tail)
+      command: tail -n 50 /opt/kafka/logs/kafkaServer.out
+      register: kafka_out_logs
+      ignore_errors: true
+
+    - name: Show Service Status
+      debug:
+        var: service_status.stdout_lines
+
+    - name: Show Kafka Logs
+      debug:
+        var: kafka_logs.stdout_lines
+        
+    - name: Show Kafka Out Logs
+      debug:
+        var: kafka_out_logs.stdout_lines

@@ -1,0 +1,76 @@
+---
+# Kafka Installation Defaults
+
+# Installation Paths
+kafka_home: /opt
+kafka_workspace: "{{ kafka_home }}/kafka"
+kafka_data_dir: "/data/kafka/kafka-logs"
+kafka_log_dir: "{{ kafka_data_dir }}"
+kafka_log_dirs: "{{ kafka_data_dir }}"
+services_logs_dir: "{{ kafka_workspace }}/services-logs"
+
+# ZooKeeper-based Kafka 2.3.x configuration
+kafka_node_id: 1
+kafka_broker_id: "{{ kafka_node_id }}"
+kafka_zookeeper_port: 2181
+kafka_zookeeper_peer_port: 2888
+kafka_zookeeper_election_port: 3888
+kafka_zookeeper_data_dir: "/data/zookeeper"
+kafka_client_port: 9092
+kafka_external_port: 9094
+kafka_version: "2.3.1"
+kafka_scala_version: "2.12"
+
+# JMX Exporter (Prometheus Java agent)
+jmx_exporter_version: "0.20.0"
+jmx_exporter_jar_url: "https://repo1.maven.org/maven2/io/prometheus/jmx/jmx_prometheus_javaagent/{{ jmx_exporter_version }}/jmx_prometheus_javaagent-{{ jmx_exporter_version }}.jar"
+kafka_jmx_exporter_dir: "/opt/jmx_exporter"
+kafka_jmx_exporter_jar: "{{ kafka_jmx_exporter_dir }}/jmx_prometheus_javaagent.jar"
+kafka_jmx_exporter_config: "{{ kafka_jmx_exporter_dir }}/config.yml"
+kafka_jmx_exporter_port: 7071
+
+# JVM Heap Size
+kafka_heap_size: "-Xmx2G -Xms2G"
+
+# Kafka Exporter Configuration
+kafka_exporter_version: "1.8.0"
+kafka_exporter_port: 9308
+kafka_exporter_download_url: "https://github.com/danielqsj/kafka_exporter/releases/download/v{{ kafka_exporter_version }}/kafka_exporter-{{ kafka_exporter_version }}.linux-amd64.tar.gz"
+
+# Node Exporter Configuration
+node_exporter_version: "1.8.1"
+node_exporter_port: 9100
+node_exporter_download_url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+
+# Prometheus Configuration
+prometheus_sd_output_path: "inventory/prometheus/kafka_targets.json"
+
+# Kafka Download URLs and archive validation
+kafka_primary_url: "https://downloads.apache.org/kafka/{{ kafka_version }}/kafka_{{ kafka_scala_version }}-{{ kafka_version }}.tgz"
+kafka_fallback_url: "https://archive.apache.org/dist/kafka/{{ kafka_version }}/kafka_{{ kafka_scala_version }}-{{ kafka_version }}.tgz"
+kafka_url: "{{ kafka_primary_url }}"
+kafka_archive_path: "/tmp/kafka_{{ kafka_scala_version }}-{{ kafka_version }}.tgz"
+kafka_download_timeout: 300
+kafka_min_archive_size_bytes: 1048576
+
+# Controller Quorum (dynamically generated in tasks, not hardcoded)
+kafka_controller_quorum_voters: ""  # computed by playbooks
+
+# Replication
+kafka_offsets_topic_replication_factor: 3
+kafka_transaction_state_log_replication_factor: 3
+kafka_transaction_state_log_min_isr: 2
+kafka_default_replication_factor: 3
+kafka_min_insync_replicas: 2
+
+# Network
+kafka_num_network_threads: 8
+kafka_num_io_threads: 16
+kafka_socket_send_buffer_bytes: 102400
+kafka_socket_receive_buffer_bytes: 102400
+kafka_socket_request_max_bytes: 104857600
+
+# Log Retention
+kafka_log_retention_hours: 168
+kafka_log_segment_bytes: 1073741824
+kafka_log_retention_check_interval_ms: 300000

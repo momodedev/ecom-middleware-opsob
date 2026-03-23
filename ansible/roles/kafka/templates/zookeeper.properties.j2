@@ -1,0 +1,10 @@
+dataDir={{ kafka_zookeeper_data_dir }}
+clientPort={{ kafka_zookeeper_port }}
+maxClientCnxns=0
+admin.enableServer=false
+tickTime=2000
+initLimit=10
+syncLimit=5
+{% for host in groups['kafka'] | sort %}
+server.{{ loop.index }}={{ hostvars[host].private_ip | default(hostvars[host].ansible_host | default(host)) }}:{{ kafka_zookeeper_peer_port }}:{{ kafka_zookeeper_election_port }}
+{% endfor %}

@@ -1,0 +1,50 @@
+---
+- name: Verify Kafka Data Disk Mount Status
+  hosts: all
+  become: yes
+  gather_facts: false
+  tasks:
+    - name: Check if /data/kafka directory exists
+      stat:
+        path: /data/kafka
+      register: data_dir
+
+    - name: Check if /data/kafka is a mountpoint
+      command: mountpoint -q /data/kafka
+      register: mount_check
+      failed_when: false
+      changed_when: false
+
+    - name: Get disk usage details
+      command: df -h /data/kafka
+      register: disk_usage
+      when: mount_check.rc == 0
+      changed_when: false
+
+    - name: Get underlying device details (lsblk)
+      shell: lsblk -no NAME,SIZE,TYPE,MOUNTPOINT | grep /data/kafka
+      register: device_details
+      when: mount_check.rc == 0
+      changed_when: false
+
+    - name: Check fstab for data disk entry
+      command: grep "/data/kafka" /etc/fstab
+      register: fstab_check
+      failed_when: false
+      changed_when: false
+
+    - name: REPORT - Data Disk Status which checks mounting
+      debug:
+        msg:
+          - "========================================================"
+          - "Host: {{ inventory_hostname }}"
+          - "Directory /data/kafka exists: {{ data_dir.stat.exists }}"
+          - "Is Mounted: {{ 'YES' if mount_check.rc == 0 else 'NO - CRITICAL ERROR' }}"
+          - "Mount Entry in fstab: {{ 'YES' if fstab_check.rc == 0 else 'NO - WARNING' }}"
+          - "--------------------------------------------------------"
+          - "Disk Usage:"
+          - "{{ disk_usage.stdout | default('N/A') }}"
+          - "--------------------------------------------------------"
+          - "Device Details (lsblk):"
+          - "{{ device_details.stdout | default('N/A') }}"
+          - "========================================================"

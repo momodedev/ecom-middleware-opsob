@@ -1,0 +1,12 @@
+[
+  {
+    "labels": {
+      "job": "kafka_exporter"
+    },
+    "targets": [
+    {% for host in groups['kafka'] | sort %}
+      "{{ hostvars[host]['private_ip'] }}:{{ kafka_exporter_port }}"{% if not loop.last %},{% endif %}
+    {% endfor %}
+    ]
+  }
+]

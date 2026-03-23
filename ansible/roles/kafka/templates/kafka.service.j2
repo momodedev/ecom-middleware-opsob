@@ -1,0 +1,25 @@
+[Unit]
+Description=Apache Kafka Broker (ZooKeeper mode)
+Requires=network.target
+After=network.target zookeeper.service
+
+[Service]
+Type=simple
+User=kafka
+Group=kafka
+Environment="KAFKA_HEAP_OPTS={{ kafka_heap_size }}"
+Environment="KAFKA_OPTS=-javaagent:{{ kafka_jmx_exporter_jar }}={{ kafka_jmx_exporter_port }}:{{ kafka_jmx_exporter_config }}"
+Environment="KAFKA_JMX_OPTS=-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname={{ ansible_default_ipv4.address }} -Dcom.sun.management.jmxremote.rmi.port=9999"
+Environment="JMX_PORT=9999"
+ExecStart={{ kafka_workspace }}/bin/kafka-server-start.sh {{ kafka_workspace }}/config/server.properties
+ExecStop={{ kafka_workspace }}/bin/kafka-server-stop.sh
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=131072
+TimeoutStopSec=30
+KillMode=process
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+[
+  {
+    "labels": {
+      "job": "kafka-jmx"
+    },
+    "targets": [
+    {% for host in groups['kafka'] | sort %}
+      "{{ hostvars[host]['private_ip'] }}:{{ kafka_jmx_exporter_port | default(7071) }}"{% if not loop.last %},{% endif %}
+    {% endfor %}
+    ]
+  }
+]

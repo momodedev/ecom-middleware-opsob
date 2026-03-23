@@ -1,0 +1,58 @@
+---
+# tasks for deploying the Kafka exporter on the management node
+#
+# The Kafka exporter exposes Kafka broker and consumer group metrics to Prometheus.
+
+- name: Ensure kafka exporter user exists
+  ansible.builtin.user:
+    name: kafkaexp
+    system: yes
+    shell: /usr/sbin/nologin
+    create_home: no
+  tags: kafka_exporter
+
+- name: Download kafka exporter archive
+  ansible.builtin.get_url:
+    url: "https://github.com/danielqsj/kafka_exporter/releases/download/v{{ kafka_exporter_version }}/kafka_exporter-{{ kafka_exporter_version }}.linux-amd64.tar.gz"
+    dest: "/tmp/kafka_exporter-{{ kafka_exporter_version }}.linux-amd64.tar.gz"
+    mode: '0644'
+  tags: kafka_exporter
+
+- name: Extract kafka exporter
+  ansible.builtin.unarchive:
+    src: "/tmp/kafka_exporter-{{ kafka_exporter_version }}.linux-amd64.tar.gz"
+    dest: /opt
+    remote_src: yes
+    creates: "/opt/kafka_exporter-{{ kafka_exporter_version }}.linux-amd64"
+  tags: kafka_exporter
+
+- name: Install kafka exporter binary
+  ansible.builtin.copy:
+    src: "/opt/kafka_exporter-{{ kafka_exporter_version }}.linux-amd64/kafka_exporter"
+    dest: "/usr/local/bin/kafka_exporter"
+    mode: '0755'
+  tags: kafka_exporter
+
+- name: Build Kafka brokers bootstrap server list
+  ansible.builtin.set_fact:
+    # Normalize host -> host:9092 (tolerates hosts already containing a port)
+    kafka_servers: "{{ groups['kafka_broker']
+      | map('extract', hostvars, 'ansible_host')
+      | map('regex_replace', '^(.*?)(:[0-9]+)?$', '\\1:9092')
+      | join(',') }}"
+  tags: kafka_exporter
+
+- name: Deploy kafka exporter service unit
+  ansible.builtin.template:
+    src: kafka_exporter.service.j2
+    dest: /etc/systemd/system/kafka_exporter.service
+    mode: '0644'
+  tags: kafka_exporter
+
+- name: Reload systemd and start kafka exporter
+  ansible.builtin.systemd:
+    name: kafka_exporter.service
+    daemon_reload: yes
+    enabled: yes
+    state: started
+  tags: kafka_exporter

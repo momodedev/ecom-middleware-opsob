@@ -1,0 +1,69 @@
+---
+# playbook to deploy the monitoring stack alongside an existing Kafka VMSS
+#
+# This playbook assumes you have defined two host groups in your Ansible
+# inventory:
+#
+#   - **management_node** – the single control/management node created by
+#     Terraform.  Prometheus, Grafana and the Kafka exporter will run on
+#     this host.  Deploying the monitoring services on the control
+#     node re‑uses existing infrastructure while keeping all Kafka
+#     broker ports separate (Prometheus on 9090, Kafka exporter on 9308,
+#     and Grafana on 3000).
+#
+#   - **kafka_broker** – the set of Kafka broker hosts that make up
+#     your VM scale set.  Each broker will run a node exporter so
+#     Prometheus can collect CPU, memory and disk metrics.
+#
+# To use this playbook run:
+#
+#     ansible-playbook -i inventory.ini playbooks/deploy_monitoring_playbook.yml
+#
+# See the README in this directory for more details.
+
+- name: Deploy Prometheus, Grafana and Kafka exporter to the management node
+  hosts: management_node
+  become: true
+  vars:
+    # Versions of the monitoring components. Adjust as necessary.
+    prometheus_version: "2.50.0"
+    grafana_apt_key_url: "https://packages.grafana.com/gpg.key"
+    node_exporter_version: "1.7.0"
+    kafka_exporter_version: "1.7.0"
+    # Dynamically get all broker IPs from inventory
+    broker_ips: "{{ groups['kafka_broker'] | map('extract', hostvars, 'ansible_host') | list }}"
+  roles:
+    - role: ../roles/monitoring/prometheus_grafana
+    - role: ../roles/kafka/kafka_exporter
+
+- name: Install node exporter on all Kafka brokers
+  hosts: kafka_broker
+  become: true
+  vars:
+    node_exporter_version: "1.7.0"
+  roles:
+    - role: ../roles/common/node_exporter
+
+- name: Generate Prometheus node exporter targets
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  vars:
+    node_targets_path: "/etc/prometheus/file_sd/node_targets.json"
+    node_exporter_port: 9100
+  tasks:
+    - name: Ensure Prometheus file_sd directory exists
+      file:
+        path: "{{ node_targets_path | dirname }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render node exporter targets file
+      template:
+        src: ../templates/prometheus_node_targets.json.j2
+        dest: "{{ node_targets_path }}"
+        mode: "0644"
+      vars:
+        target_ips: "{{ groups['kafka_broker'] | map('extract', hostvars, 'ansible_host') | list }}"
+        target_port: "{{ node_exporter_port }}"

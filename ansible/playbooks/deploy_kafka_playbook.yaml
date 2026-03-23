@@ -1,0 +1,102 @@
+---
+- name: Wait for SSH and verify connectivity
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Ensure VM is reachable over SSH
+      wait_for:
+        port: 22
+        host: "{{ ansible_host }}"
+        delay: 10
+        timeout: 600  # Increased timeout
+      vars:
+        ansible_connection: local
+      register: ssh_wait
+      retries: 3
+      delay: 30
+      until: ssh_wait is succeeded
+
+    - name: Test SSH connection with retries
+      command: echo "SSH OK"
+      register: ssh_test
+      changed_when: false
+      retries: 5
+      delay: 10
+      until: ssh_test is succeeded
+      ignore_errors: true
+
+    - name: Fail if SSH is not working
+      fail:
+        msg: "Cannot establish SSH connection to {{ inventory_hostname }} ({{ ansible_host }})"
+      when: ssh_test is failed
+
+- name: Generate Kafka Controller Quorum Voters (run once on localhost)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Init voters list
+      set_fact:
+        voters_list: []
+
+    - name: Build voters list with id@ip:port
+      set_fact:
+        voters_list: "{{ voters_list + [ '%s@%s:%s' | format(idx + 1, hostvars[item]['private_ip'] | default(hostvars[item]['ansible_host']), kafka_controller_port | default(9093)) ] }}"
+      loop: "{{ groups['kafka'] | sort }}"
+      loop_control:
+        index_var: idx
+
+    - name: Finalize kafka_controller_quorum_voters
+      set_fact:
+        kafka_controller_quorum_voters: "{{ voters_list | join(',') }}"
+
+    - name: Display computed quorum voters
+      debug:
+        msg: "kafka_controller_quorum_voters = {{ kafka_controller_quorum_voters }}"
+
+- name: Configure KRaft Kafka brokers
+  hosts: kafka
+  become: true
+  pre_tasks:
+    - name: Assign deterministic node id
+      set_fact:
+        kafka_node_id: "{{ groups['kafka'].index(inventory_hostname) + 1 }}"
+
+    - name: Retrieve kafka_controller_quorum_voters from localhost facts
+      set_fact:
+        kafka_controller_quorum_voters: "{{ hostvars['localhost']['kafka_controller_quorum_voters'] }}"
+
+  roles:
+    - role: ../roles/kafka
+
+- name: Generate Prometheus targets for Kafka exporters
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: yes
+  vars:
+    # Ensure path is defined when running outside any role defaults
+    prometheus_sd_output_path: "/etc/prometheus/file_sd/kafka_targets.json"
+    prometheus_jmx_output_path: "/etc/prometheus/file_sd/kafka_jmx_targets.json"
+    # Ensure port is defined for the template rendered on localhost
+    kafka_exporter_port: 9308
+    kafka_jmx_exporter_port: 7071
+  tasks:
+    - name: Ensure Prometheus target directory exists
+      file:
+        path: "{{ prometheus_sd_output_path | dirname }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render Kafka scrape target file
+      template:
+        src: ../roles/kafka/templates/prometheus_kafka_targets.json.j2
+        dest: "{{ prometheus_sd_output_path }}"
+        mode: "0644"
+
+    - name: Render Kafka JMX scrape target file
+      template:
+        src: ../roles/kafka/templates/prometheus_kafka_jmx_targets.json.j2
+        dest: "{{ prometheus_jmx_output_path }}"
+        mode: "0644"
+

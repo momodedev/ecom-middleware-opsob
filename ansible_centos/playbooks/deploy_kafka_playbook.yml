@@ -1,0 +1,3 @@
+---
+# CentOS lane wrapper: reuses proven Kafka playbook without modifying ansible/.
+- import_playbook: ../../ansible/playbooks/deploy_kafka_playbook.yaml

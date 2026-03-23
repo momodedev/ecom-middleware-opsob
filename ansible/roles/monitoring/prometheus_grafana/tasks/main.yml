@@ -1,0 +1,187 @@
+---
+# tasks for deploying Prometheus and Grafana on a management node
+# This role installs Prometheus, sets up a configuration based on the current
+# inventory, installs Grafana and provisions a Prometheus data source and
+# dashboards.  It supports both Debian/Ubuntu (apt) and RedHat/Rocky (yum).
+
+- name: Gather minimal facts to determine OS family
+  ansible.builtin.setup:
+    gather_subset:
+      - os_family
+      - distribution
+  tags: always
+
+# -----------------------------------------------------------------------------
+# Prometheus installation
+#
+- name: Ensure prometheus user exists
+  ansible.builtin.user:
+    name: prometheus
+    system: yes
+    shell: /usr/sbin/nologin
+    create_home: no
+  tags: prometheus
+
+- name: Download Prometheus archive
+  ansible.builtin.get_url:
+    url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+    dest: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+    mode: '0644'
+  tags: prometheus
+
+- name: Extract Prometheus tarball
+  ansible.builtin.unarchive:
+    src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+    dest: /opt
+    remote_src: yes
+    creates: "/opt/prometheus-{{ prometheus_version }}.linux-amd64"
+  tags: prometheus
+
+- name: Install Prometheus binaries
+  ansible.builtin.copy:
+    src: "/opt/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: '0755'
+  loop:
+    - prometheus
+    - promtool
+  tags: prometheus
+
+- name: Create Prometheus configuration and data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: '0755'
+  loop:
+    - /etc/prometheus
+    - /etc/prometheus/file_sd
+    - /var/lib/prometheus
+  tags: prometheus
+
+- name: Generate Prometheus configuration from template
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /etc/prometheus/prometheus.yml
+    owner: prometheus
+    group: prometheus
+    mode: '0644'
+  tags: prometheus
+
+- name: Deploy Prometheus systemd service unit
+  ansible.builtin.template:
+    src: prometheus.service.j2
+    dest: /etc/systemd/system/prometheus.service
+    mode: '0644'
+  tags: prometheus
+
+- name: Reload systemd and ensure Prometheus is running
+  ansible.builtin.systemd:
+    name: prometheus.service
+    daemon_reload: yes
+    enabled: yes
+    state: started
+  tags: prometheus
+
+# -----------------------------------------------------------------------------
+# Grafana installation
+#
+- name: Add Grafana repository and install Grafana on Debian/Ubuntu
+  when: ansible_facts.os_family == 'Debian'
+  block:
+    - name: Add Grafana GPG key
+      ansible.builtin.apt_key:
+        url: "{{ grafana_apt_key_url }}"
+        state: present
+    - name: Add Grafana APT repository
+      ansible.builtin.apt_repository:
+        repo: 'deb https://packages.grafana.com/oss/deb stable main'
+        state: present
+    - name: Update APT cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+    - name: Install Grafana package
+      ansible.builtin.apt:
+        name: grafana
+        state: present
+  tags: grafana
+
+- name: Add Grafana repository and install Grafana on RedHat family
+  when: ansible_facts.os_family == 'RedHat'
+  block:
+    - name: Import Grafana GPG key for YUM
+      ansible.builtin.rpm_key:
+        key: https://packages.grafana.com/gpg.key
+        state: present
+      ignore_errors: yes
+      
+    - name: Configure Grafana YUM repository
+      ansible.builtin.yum_repository:
+        name: grafana
+        description: Grafana YUM repository
+        baseurl: https://packages.grafana.com/oss/rpm
+        gpgcheck: yes
+        repo_gpgcheck: no
+        gpgkey: https://packages.grafana.com/gpg.key
+        enabled: yes
+    - name: Install Grafana package
+      ansible.builtin.yum:
+        name: grafana
+        state: present
+      register: grafana_install_result
+      retries: 3
+      delay: 10
+      until: grafana_install_result is succeeded
+  tags: grafana
+
+# Provision Grafana by writing the datasources and dashboards configuration.
+
+- name: Ensure Grafana provisioning directories exist
+  ansible.builtin.file:
+    path: "/etc/grafana/provisioning/{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - datasources
+    - dashboards
+  tags: grafana
+
+- name: Install Prometheus datasource for Grafana
+  ansible.builtin.template:
+    src: grafana-datasource.yml.j2
+    dest: /etc/grafana/provisioning/datasources/ansible-prometheus.yaml
+    mode: '0644'
+  tags: grafana
+
+- name: Install dashboard provisioning file
+  ansible.builtin.template:
+    src: grafana-dashboard.yml.j2
+    dest: /etc/grafana/provisioning/dashboards/ansible-dashboards.yaml
+    mode: '0644'
+  tags: grafana
+
+- name: Ensure dashboard JSON directory exists
+  ansible.builtin.file:
+    path: /etc/grafana/provisioning/dashboards/ansible
+    state: directory
+    mode: '0755'
+  tags: grafana
+
+- name: Copy Grafana dashboard JSONs
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/dashboards/{{ item }}"
+    dest: "/etc/grafana/provisioning/dashboards/ansible/{{ item }}"
+    mode: '0644'
+  loop:
+    - kafka_cluster_dashboard_enhance.json
+    - node_exporter_dashboard.json
+  tags: grafana
+
+- name: Enable and start Grafana service
+  ansible.builtin.systemd:
+    name: grafana-server
+    enabled: yes
+    state: started
+  tags: grafana

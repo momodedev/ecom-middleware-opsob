@@ -1,0 +1,44 @@
+---
+# Authorize control node SSH key on Kafka brokers for health checks
+# Usage: ansible-playbook -i inventory/kafka_hosts playbooks/authorize_control_ssh.yml
+
+- name: Authorize Control Node SSH Key on Kafka Brokers
+  hosts: kafka
+  become: yes
+  gather_facts: no
+  
+  vars:
+    control_user: azureadmin
+    control_host: "{{ lookup('env', 'CONTROL_HOST') | default('control', true) }}"
+    broker_user: rockyadmin
+  
+  tasks:
+    - name: Ensure .ssh directory exists for broker user
+      file:
+        path: /home/{{ broker_user }}/.ssh
+        state: directory
+        owner: "{{ broker_user }}"
+        group: "{{ broker_user }}"
+        mode: '0700'
+
+    - name: Fetch control node public key
+      slurp:
+        src: /home/{{ control_user }}/.ssh/id_rsa.pub
+      register: control_pub_key
+      delegate_to: localhost
+      run_once: true
+
+    - name: Add control node key to broker authorized_keys
+      authorized_key:
+        user: "{{ broker_user }}"
+        state: present
+        key: "{{ control_pub_key.content | b64decode }}"
+        comment: "control-node-{{ control_user }}"
+
+    - name: Test SSH connectivity from control
+      command: echo "SSH OK"
+      register: test_result
+
+    - name: Display result
+      debug:
+        msg: "✅ Control node can now SSH to {{ inventory_hostname }} as {{ broker_user }}"

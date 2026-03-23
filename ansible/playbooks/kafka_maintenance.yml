@@ -1,0 +1,301 @@
+---
+# Kafka Cluster Maintenance Playbook - Start/Stop/Restart
+# Provides ordered startup and graceful shutdown of Kafka clusters
+
+- name: Kafka Cluster Maintenance Operations
+  hosts: kafka
+  gather_facts: yes
+  become: yes
+  
+  vars:
+    # Control the operation: start, stop, restart, health-check
+    operation: "{{ kafka_operation | default('health-check') }}"
+    graceful_timeout: 30
+    health_check_timeout: 60
+
+  pre_tasks:
+    - name: Ensure Kafka services log directory exists
+      file:
+        path: "{{ services_logs_dir | default('/var/log/kafka') }}"
+        state: directory
+        owner: kafka
+        group: kafka
+        mode: "0755"
+      become: yes
+
+  tasks:
+    # =====================================================================
+    # STARTUP OPERATIONS
+    # =====================================================================
+
+    - name: Start Kafka Broker
+      block:
+        - name: Check if Kafka service is already running
+          systemd:
+            name: kafka.service
+          register: kafka_service_status
+
+        - name: Start Kafka broker service
+          systemd:
+            name: kafka.service
+            state: started
+            enabled: yes
+            daemon_reload: no
+          when: kafka_service_status.status.ActiveState != "active"
+
+        - name: Wait for Kafka broker to be ready
+          wait_for:
+            port: 9092
+            delay: 5
+            timeout: "{{ health_check_timeout }}"
+
+        - name: Start kafka_exporter
+          systemd:
+            name: kafka_exporter.service
+            state: started
+            enabled: yes
+            daemon_reload: no
+          ignore_errors: yes
+
+        - name: Verify broker is accepting connections
+          shell: |
+            set -o pipefail
+            /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 2>&1 | head -5
+          become: yes
+          become_user: kafka
+          register: broker_api
+          retries: 3
+          delay: 5
+          ignore_errors: yes
+
+        - name: Display broker API response
+          debug:
+            var: broker_api.stdout_lines
+          when: broker_api.rc == 0
+
+      when: operation in ['start', 'restart']
+
+    # =====================================================================
+    # SHUTDOWN OPERATIONS (Graceful)
+    # =====================================================================
+
+    - name: Stop Kafka Broker (Graceful)
+      block:
+        - name: Check if Kafka process is running
+          command: pgrep -f kafka.Kafka
+          register: kafka_check
+          ignore_errors: yes
+
+        - name: Stop accepting new requests (disable writes)
+          command: kill -TERM {{ kafka_check.stdout_lines[0] }}
+          become: yes
+          register: stop_signal
+          when: kafka_check.rc == 0
+          ignore_errors: yes
+
+        - name: Wait for graceful shutdown to complete
+          wait_for:
+            port: 9092
+            state: stopped
+            delay: 2
+            timeout: "{{ graceful_timeout }}"
+          ignore_errors: yes
+
+        - name: Force stop Kafka service
+          ansible.builtin.systemd:
+            name: kafka
+            state: stopped
+            enabled: no
+            daemon_reload: yes
+          ignore_errors: yes
+
+        - name: Check if Kafka is still running
+          command: pgrep -f kafka.Kafka
+          register: kafka_still_running
+          ignore_errors: yes
+
+        - name: Ensure Kafka process is terminated (fallback)
+          ansible.builtin.shell: pkill -f 'kafka.Kafka'
+          args:
+            warn: false
+          become: yes
+          when: kafka_still_running.rc == 0
+          ignore_errors: yes
+
+        - name: Stop kafka_exporter
+          ansible.builtin.systemd:
+            name: kafka_exporter
+            state: stopped
+            enabled: no
+            daemon_reload: yes
+          ignore_errors: yes
+
+        - name: Check if kafka_exporter is running
+          command: pgrep -f kafka_exporter
+          register: exporter_check
+          ignore_errors: yes
+
+        - name: Ensure kafka_exporter process is terminated (fallback)
+          ansible.builtin.shell: pkill -f 'kafka_exporter'
+          args:
+            warn: false
+          become: yes
+          when: exporter_check.rc == 0
+          ignore_errors: yes
+
+        - name: Ensure Kafka is stopped (check all interfaces)
+          shell: |
+            ! netstat -tuln | grep -E ':9092[[:space:]]' && ! ss -tuln | grep -E ':9092[[:space:]]' || true
+          become: yes
+          register: port_check
+          retries: 3
+          delay: 10
+          until: port_check.rc == 0
+          ignore_errors: yes
+
+      when: operation == 'stop'
+
+    # =====================================================================
+    # RESTART OPERATIONS
+    # =====================================================================
+
+    - name: Restart Kafka Broker
+      block:
+        - name: Stop broker gracefully
+          systemd:
+            name: kafka.service
+            state: stopped
+          ignore_errors: yes
+
+        - name: Wait for broker to be fully stopped
+          wait_for:
+            port: 9092
+            state: stopped
+            delay: 1
+            timeout: 15
+          ignore_errors: yes
+
+        - name: Start broker again
+          systemd:
+            name: kafka.service
+            state: started
+            enabled: yes
+
+        - name: Wait for broker to be ready
+          wait_for:
+            port: 9092
+            delay: 5
+            timeout: "{{ health_check_timeout }}"
+
+        - name: Verify broker health after restart
+          shell: |
+            set -o pipefail
+            /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 2>&1 | head -3
+          become: yes
+          become_user: kafka
+          register: restart_check
+          retries: 3
+          delay: 5
+
+        - name: Display restart status
+          debug:
+            msg: "✅ Kafka broker {{ inventory_hostname }} restarted successfully"
+
+      when: operation == 'restart'
+
+    # =====================================================================
+    # EXPORTER MANAGEMENT
+    # =====================================================================
+
+    - name: Start Exporter
+      systemd:
+        name: kafka_exporter.service
+        state: started
+        enabled: yes
+      ignore_errors: yes
+      when: operation in ['start', 'restart']
+
+    - name: Stop Exporter
+      systemd:
+        name: kafka_exporter.service
+        state: stopped
+      ignore_errors: yes
+      when: operation == 'stop'
+
+    - name: Check Exporter Health
+      block:
+        - name: Exporter service status
+          systemd:
+            name: kafka_exporter.service
+          register: exporter_status
+
+        - name: Check exporter port
+          wait_for:
+            port: 9308
+            delay: 1
+            timeout: 5
+          register: exporter_port
+          ignore_errors: yes
+
+        - name: Display exporter status
+          debug:
+            msg: |
+              Kafka Exporter Status:
+              Service: {{ exporter_status.status.ActiveState }}
+              Port 9308: {{ 'Accessible' if exporter_port is succeeded else 'Not accessible' }}
+
+      when: operation == 'health-check'
+
+  # =====================================================================
+  # POST-OPERATION SUMMARY
+  # =====================================================================
+
+  post_tasks:
+    - name: Log operation result
+      copy:
+        content: |
+          Kafka Maintenance Operation Summary
+          ====================================
+          Operation: {{ operation | default('unknown') }}
+          Timestamp: {{ ansible_date_time.iso8601 }}
+          Host: {{ inventory_hostname }}
+          Status: Completed
+        dest: "{{ services_logs_dir | default('/var/log/kafka') }}/maintenance_{{ operation | default('unknown') }}_{{ ansible_date_time.iso8601_basic }}.log"
+      become: yes
+      become_user: kafka
+      ignore_errors: yes
+
+# =========================================================================
+# MONITORING INTEGRATION - Update Prometheus Targets if needed
+# =========================================================================
+
+- name: Validate Cluster State (Run on Monitor)
+  hosts: "{{ groups['monitoring'][0] | default('localhost') }}"
+  connection: local
+  gather_facts: no
+  
+  tasks:
+    - name: Health check for all brokers
+      block:
+        - name: Get list of all brokers
+          set_fact:
+            all_brokers: "{{ groups['kafka'] }}"
+
+        - name: Check each broker health
+          uri:
+            url: "http://{{ item }}:9308/metrics"
+            method: GET
+            timeout: 5
+          loop: "{{ all_brokers }}"
+          register: broker_metrics
+          ignore_errors: yes
+
+        - name: Display metric availability
+          debug:
+            msg: |
+              Broker Metrics Status:
+              {% for result in broker_metrics.results %}
+              - {{ result.item }}: {{ 'OK' if result is succeeded else 'FAILED' }}
+              {% endfor %}
+
+      when: operation | default('health-check') in ['start', 'restart', 'health-check']

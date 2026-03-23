@@ -1,0 +1,48 @@
+---
+# tasks for deploying node exporter on Kafka brokers
+
+- name: Ensure node exporter user exists
+  ansible.builtin.user:
+    name: nodeexp
+    system: yes
+    shell: /usr/sbin/nologin
+    create_home: no
+  tags: node_exporter
+
+- name: Download node exporter archive
+  ansible.builtin.get_url:
+    url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+    dest: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+    mode: '0644'
+  tags: node_exporter
+
+- name: Extract node exporter
+  ansible.builtin.unarchive:
+    src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+    dest: /opt
+    remote_src: yes
+    creates: "/opt/node_exporter-{{ node_exporter_version }}.linux-amd64"
+  tags: node_exporter
+
+- name: Install node exporter binary
+  ansible.builtin.copy:
+    src: "/opt/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+    dest: "/usr/local/bin/node_exporter"
+    mode: '0755'
+    remote_src: true
+  tags: node_exporter
+
+- name: Deploy node exporter service unit
+  ansible.builtin.template:
+    src: node_exporter.service.j2
+    dest: /etc/systemd/system/node_exporter.service
+    mode: '0644'
+  tags: node_exporter
+
+- name: Reload systemd and start node exporter
+  ansible.builtin.systemd:
+    name: node_exporter.service
+    daemon_reload: yes
+    enabled: yes
+    state: started
+  tags: node_exporter

@@ -1,0 +1,27 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets:
+          - 'localhost:9090'
+
+  - job_name: 'kafka-jmx'
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/file_sd/kafka_jmx_targets.json'
+        refresh_interval: 30s
+
+  - job_name: 'kafka-exporter'
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/file_sd/kafka_targets.json'
+        refresh_interval: 30s
+
+  - job_name: 'node-exporter'
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/file_sd/node_targets.json'
+        refresh_interval: 30s

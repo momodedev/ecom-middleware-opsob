@@ -1,0 +1,587 @@
+---
+# ==================== PRE-FLIGHT CHECKS ====================
+# Wait for cloud-init to complete on the VM
+- name: Wait for cloud-init to complete
+  shell: "cloud-init status --wait"
+  register: cloud_init_wait
+  changed_when: false
+  retries: 60
+  delay: 5
+  until: cloud_init_wait.rc == 0
+  ignore_errors: yes
+  tags: always
+
+# ==================== SETENV TASKS (Setup Environment) ====================
+# Install required packages
+- name: Install required packages
+  package:
+    name:
+      - java-11-openjdk
+      - net-tools
+      - tar
+    state: present
+
+- name: Create kafka group
+  group:
+    name: kafka
+    state: present
+
+- name: Create kafka user
+  user:
+    name: kafka
+    group: kafka
+
+- name: Collect service facts
+  service_facts:
+
+# Disable firewalld (ports 9092/9093/9094/9308/9100 need to be reachable)
+- name: Disable firewalld when present
+  service:
+    name: firewalld
+    state: stopped
+    enabled: no
+  when: "'firewalld.service' in ansible_facts.services"
+  become: yes
+
+- name: Check if Kafka is already installed
+  stat:
+    path: "{{ kafka_workspace }}/bin/kafka-server-start.sh"
+  register: kafka_binary_check
+
+# ==================== DATA DISK SETUP (Moved from cloud-init) ====================
+# ==================== DATA DISK RECOVERY (Fix incorrect mount) ====================
+- name: Check data disk size validity
+  shell: df -P /data/kafka | tail -1 | awk '{print $2}'
+  register: data_mount_size
+  ignore_errors: yes
+  changed_when: false
+  become: yes
+
+- name: Check if /data/kafka is already mounted
+  shell: findmnt -n -o SOURCE /data/kafka
+  register: existing_data_device
+  failed_when: false
+  changed_when: false
+  become: yes
+
+- name: Stop Kafka service to release disk lock
+  service:
+    name: kafka
+    state: stopped
+  ignore_errors: yes
+  become: yes
+  when: 
+    - data_mount_size.stdout | int > 0
+    - data_mount_size.stdout | int < 50000000
+
+- name: Unmount incorrect data disk (Safety Check)
+  mount:
+    path: /data/kafka
+    state: unmounted
+  # If size is less than 50GB (approx 50000000 1k blocks), it's definitely not our 1TB disk. 
+  # It's likely the 2MB bios boot partition we accidentally grabbed.
+  when: 
+    - data_mount_size.stdout | int > 0
+    - data_mount_size.stdout | int < 50000000
+  become: yes
+
+# ==================== DATA DISK SETUP (Moved from cloud-init) ====================
+- name: Detect available data disk
+  shell: |
+    # 1. Identify the Root Device (OS Disk)
+    ROOT_PART=$(findmnt -n -o SOURCE /)
+    # Get the parent disk of the root partition
+    ROOT_DISK=$(lsblk -no pkname "$ROOT_PART")
+    
+    # 2. Iterate ONLY over physical DISKS (TYPE="disk")
+    # This prevents accidentally selecting partitions (like nvme0n1p1)
+    # lsblk -d: device (no partitions)
+    # -n: no header
+    # -p: full path
+    # -o: output columns
+    
+    CANDIDATES=$(lsblk -dpno NAME,TYPE | awk '$2=="disk" {print $1}')
+    
+    for dev in $CANDIDATES; do
+        dev_name=$(basename "$dev")
+        
+        # Skip if it is the root disk
+        if [[ "$dev_name" == "$ROOT_DISK" ]]; then continue; fi
+        
+        # Skip if it is small (< 10GB) - ignores small metadata devices/drives
+        size=$(lsblk -bdno SIZE "$dev" | head -1)
+        if [ "$size" -lt 10737418240 ]; then continue; fi
+        
+        # Skip if it is already mounted (anywhere)
+        if lsblk "$dev" -n -o MOUNTPOINT | grep -q "."; then continue; fi
+        
+        # Found it!
+        echo "$dev"
+        exit 0
+    done
+    
+    exit 1
+  args:
+    executable: /bin/bash
+  register: detected_disk_device
+  failed_when: detected_disk_device.rc != 0
+  changed_when: false
+  become: yes
+  when: existing_data_device.stdout == ""
+
+- name: Use existing mounted data device when available
+  set_fact:
+    detected_disk_device:
+      stdout: "{{ existing_data_device.stdout }}"
+  when: existing_data_device.stdout != ""
+
+- name: Fail if no data disk is available
+  fail:
+    msg: "No available data disk found and /data/kafka is not mounted. Ensure a data disk is attached or pre-mounted."
+  when:
+    - existing_data_device.stdout == ""
+    - (detected_disk_device.stdout | default("")) == ""
+
+- name: Debug detected disk
+  debug:
+    msg: "Found data disk candidate: {{ detected_disk_device.stdout | default('') }}"
+
+- name: Create filesystem on data disk (ext4)
+  filesystem:
+    fstype: ext4
+    dev: "{{ detected_disk_device.stdout }}"
+  when: (detected_disk_device.stdout | default("")) != ""
+  become: yes
+
+- name: Ensure data directory exists
+  file:
+    path: /data/kafka
+    state: directory
+    mode: '0755'
+    owner: kafka
+    group: kafka
+  become: yes
+
+- name: Mount data disk to /data/kafka
+  mount:
+    path: /data/kafka
+    src: "{{ detected_disk_device.stdout }}"
+    fstype: ext4
+    opts: defaults,nofail
+    state: mounted
+  when: (detected_disk_device.stdout | default("")) != ""
+  become: yes
+
+- name: Ensure correct permissions on mount point
+  file:
+    path: /data/kafka
+    state: directory
+    owner: kafka
+    group: kafka
+    mode: '0755'
+  become: yes
+
+- name: Debug - Kafka binary check result
+  debug:
+    msg: "Kafka binary check for {{ inventory_hostname }}: exists={{ kafka_binary_check.stat.exists }}"
+  tags: always
+
+- name: Check kafka directory
+  stat:
+    path: "{{ kafka_workspace }}"
+  register: directory_check
+
+- name: Clean incomplete Kafka installation if needed
+  file:
+    path: "{{ kafka_workspace }}"
+    state: absent
+  when: 
+    - directory_check.stat.exists
+    - directory_check.stat.isdir
+    - not kafka_binary_check.stat.exists
+  register: kafka_cleanup
+
+- name: Download Kafka archive from primary URL
+  get_url:
+    url: "{{ kafka_primary_url }}"
+    dest: "{{ kafka_archive_path }}"
+    mode: "0644"
+    timeout: "{{ kafka_download_timeout }}"
+    force: yes
+  when: not kafka_binary_check.stat.exists or kafka_cleanup is changed
+  register: kafka_download_primary
+  failed_when: false
+
+- name: Check Kafka archive size after primary download
+  stat:
+    path: "{{ kafka_archive_path }}"
+  when: not kafka_binary_check.stat.exists or kafka_cleanup is changed
+  register: kafka_archive_stat_primary
+
+- name: Download Kafka archive from fallback URL when primary is invalid
+  get_url:
+    url: "{{ kafka_fallback_url }}"
+    dest: "{{ kafka_archive_path }}"
+    mode: "0644"
+    timeout: "{{ kafka_download_timeout }}"
+    force: yes
+  when:
+    - not kafka_binary_check.stat.exists or kafka_cleanup is changed
+    - (kafka_archive_stat_primary.stat.exists | default(false)) == false or (kafka_archive_stat_primary.stat.size | default(0) | int) < (kafka_min_archive_size_bytes | int)
+  register: kafka_download_fallback
+  failed_when: false
+
+- name: Check final Kafka archive size
+  stat:
+    path: "{{ kafka_archive_path }}"
+  when: not kafka_binary_check.stat.exists or kafka_cleanup is changed
+  register: kafka_archive_stat_final
+
+- name: Fail when Kafka archive download is invalid
+  fail:
+    msg: >-
+      Kafka archive download failed or is too small (size={{ kafka_archive_stat_final.stat.size | default(0) }} bytes).
+      Tried primary={{ kafka_primary_url }} and fallback={{ kafka_fallback_url }}.
+  when:
+    - not kafka_binary_check.stat.exists or kafka_cleanup is changed
+    - (kafka_archive_stat_final.stat.exists | default(false)) == false or (kafka_archive_stat_final.stat.size | default(0) | int) < (kafka_min_archive_size_bytes | int)
+
+- name: Unpack kafka archive
+  unarchive:
+    src: "{{ kafka_archive_path }}"
+    dest: "{{ kafka_home }}"
+    owner: kafka
+    group: kafka
+    mode: 0755
+    remote_src: yes
+  when: not kafka_binary_check.stat.exists or kafka_cleanup is changed
+  register: kafka_download
+  
+- name: Find kafka folder after extraction
+  find: 
+    paths: "{{ kafka_home }}"
+    pattern: "kafka_*"
+    file_type: directory
+  register: directory_name
+  when: not kafka_binary_check.stat.exists or kafka_cleanup is changed
+
+- name: Rename kafka folder to standard path
+  shell: |
+    if [ -d "{{ directory_name.files[0].path }}" ]; then
+      mv {{ directory_name.files[0].path }} {{ kafka_workspace }}
+      echo "Kafka moved to {{ kafka_workspace }}"
+    fi
+  when: 
+    - (not kafka_binary_check.stat.exists or kafka_cleanup is changed)
+    - directory_name.files | length > 0
+  args:
+    creates: "{{ kafka_workspace }}"
+  register: kafka_rename
+
+- name: Verify Kafka installation success
+  stat:
+    path: "{{ kafka_workspace }}/bin/kafka-server-start.sh"
+  register: kafka_verify
+  failed_when: not kafka_verify.stat.exists
+  retries: 3
+  delay: 5
+
+- name: Ensure Kafka data directory exists
+  file:
+    path: "{{ kafka_data_dir }}"
+    state: directory
+    owner: kafka
+    group: kafka
+    mode: "0750"
+
+- name: Ensure Kafka services log directory exists
+  file:
+    path: "{{ services_logs_dir }}"
+    state: directory
+    owner: kafka
+    group: kafka
+    mode: "0755"
+
+# ==================== KAFKA BROKER CONFIGURATION TASKS ====================
+- name: Ensure Kafka configuration directory ownership
+  file:
+    path: "{{ kafka_workspace }}/config"
+    state: directory
+    owner: kafka
+    group: kafka
+    mode: "0755"
+
+- name: Assign deterministic node id
+  set_fact:
+    kafka_node_id: "{{ groups['kafka'].index(inventory_hostname) + 1 }}"
+  
+- name: Set broker id from node id
+  set_fact:
+    kafka_broker_id: "{{ kafka_node_id }}"
+
+
+- name: Derive advertised host for Kafka
+  set_fact:
+    kafka_advertised_host: "{{ ansible_host | default(hostvars[inventory_hostname].private_ip) | default(ansible_default_ipv4.address) }}"
+
+- name: Derive external advertised host for Kafka (prefer public_ip if available)
+  set_fact:
+    kafka_external_advertised_host: "{{ public_ip | default(hostvars[inventory_hostname].public_ip) | default(kafka_advertised_host) }}"
+
+- name: Validate kafka_advertised_host
+  assert:
+    that:
+      - kafka_advertised_host is defined
+      - kafka_advertised_host != ''
+      - kafka_advertised_host != '0.0.0.0'
+      - kafka_advertised_host != '127.0.0.1'
+      - kafka_advertised_host is match('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+    fail_msg: |
+      FATAL: kafka_advertised_host is invalid: {{ kafka_advertised_host | default('UNDEFINED') }}
+      ansible_host: {{ ansible_host | default('UNDEFINED') }}
+      private_ip: {{ hostvars[inventory_hostname].private_ip | default('UNDEFINED') }}
+      ansible_default_ipv4.address: {{ ansible_default_ipv4.address | default('UNDEFINED') }}
+    success_msg: "kafka_advertised_host validated: {{ kafka_advertised_host }}"
+
+- name: Validate kafka_external_advertised_host
+  assert:
+    that:
+      - kafka_external_advertised_host is defined
+      - kafka_external_advertised_host != ''
+      - kafka_external_advertised_host != '0.0.0.0'
+      - kafka_external_advertised_host != '127.0.0.1'
+      - kafka_external_advertised_host is match('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+    fail_msg: |
+      FATAL: kafka_external_advertised_host is invalid: {{ kafka_external_advertised_host | default('UNDEFINED') }}
+      kafka_advertised_host: {{ kafka_advertised_host | default('UNDEFINED') }}
+    success_msg: "kafka_external_advertised_host validated: {{ kafka_external_advertised_host }}"
+
+- name: DEBUG - Show final kafka_advertised_host
+  debug:
+    msg: "Broker {{ inventory_hostname }} will advertise on {{ kafka_advertised_host }}"
+
+- name: DEBUG - Show final kafka_external_advertised_host
+  debug:
+    msg: "Broker {{ inventory_hostname }} will externally advertise on {{ kafka_external_advertised_host }}"
+
+- name: DEBUG - Show all kafka_ variables
+  debug:
+    msg:
+      - "kafka_broker_id: {{ kafka_broker_id | default('UNDEFINED') }}"
+      - "kafka_client_port: {{ kafka_client_port | default('UNDEFINED') }}"
+      - "kafka_zookeeper_port: {{ kafka_zookeeper_port | default('UNDEFINED') }}"
+      - "kafka_advertised_host: {{ kafka_advertised_host | default('UNDEFINED') }}"
+      - "kafka_log_dirs: {{ kafka_log_dirs | default('UNDEFINED') }}"
+
+- name: Configure Kafka KRaft server properties
+  template:
+    src: server.properties.j2
+    dest: "{{ kafka_workspace }}/config/server.properties"
+    owner: kafka
+    group: kafka
+    mode: "0644"
+  become: yes
+  register: server_properties
+
+- name: Verify advertised.listeners in rendered config
+  shell: grep "^advertised.listeners=" {{ kafka_workspace }}/config/server.properties
+  register: advertised_check
+  changed_when: false
+  become: yes
+
+- name: DEBUG - Show rendered advertised.listeners
+  debug:
+    var: advertised_check.stdout
+
+- name: Fail if advertised.listeners contains 0.0.0.0 or is empty
+  fail:
+    msg: "ERROR: advertised.listeners is misconfigured: {{ advertised_check.stdout }}"
+  when: >
+    '0.0.0.0' in advertised_check.stdout or
+    advertised_check.stdout is search('://:[0-9]+') or
+    advertised_check.stdout == ''
+
+- name: Pre-format diagnostic - List kafka workspace contents
+  shell: "ls -la {{ kafka_workspace }}/"
+  register: kafka_ws_list
+  changed_when: false
+  tags: always
+  
+- name: Pre-format diagnostic - Show kafka workspace contents
+  debug:
+    var: kafka_ws_list.stdout_lines
+  tags: always
+
+- name: Ensure ZooKeeper data directory exists
+  file:
+    path: "{{ kafka_zookeeper_data_dir }}"
+    state: directory
+    owner: kafka
+    group: kafka
+    mode: "0755"
+
+- name: Write ZooKeeper myid
+  copy:
+    dest: "{{ kafka_zookeeper_data_dir }}/myid"
+    content: "{{ kafka_node_id }}\n"
+    owner: kafka
+    group: kafka
+    mode: "0644"
+
+- name: Configure ZooKeeper properties
+  template:
+    src: zookeeper.properties.j2
+    dest: "{{ kafka_workspace }}/config/zookeeper.properties"
+    owner: kafka
+    group: kafka
+    mode: "0644"
+  become: yes
+
+- name: Create ZooKeeper systemd unit
+  template:
+    src: zookeeper.service.j2
+    dest: /etc/systemd/system/zookeeper.service
+    mode: "0644"
+  register: zookeeper_service_unit
+
+- name: Reload systemd and start ZooKeeper
+  systemd:
+    name: zookeeper
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Wait for ZooKeeper listener
+  wait_for:
+    host: "{{ kafka_advertised_host }}"
+    port: "{{ kafka_zookeeper_port }}"
+    delay: 5
+    timeout: 60
+    state: started
+    msg: "ZooKeeper listener not available on {{ inventory_hostname }}"
+
+- name: Ensure JMX exporter directory exists
+  file:
+    path: "{{ kafka_jmx_exporter_dir }}"
+    state: directory
+    owner: kafka
+    group: kafka
+    mode: "0755"
+
+- name: Download JMX exporter javaagent
+  get_url:
+    url: "{{ jmx_exporter_jar_url }}"
+    dest: "{{ kafka_jmx_exporter_jar }}"
+    mode: "0755"
+    timeout: 120
+  register: jmx_exporter_jar
+  retries: 3
+  delay: 10
+  until: jmx_exporter_jar is succeeded
+
+- name: Deploy JMX exporter config
+  template:
+    src: jmx_exporter_config.yml.j2
+    dest: "{{ kafka_jmx_exporter_config }}"
+    owner: kafka
+    group: kafka
+    mode: "0644"
+  register: jmx_exporter_config
+
+- name: Create Kafka systemd unit
+  template:
+    src: kafka.service.j2
+    dest: /etc/systemd/system/kafka.service
+    mode: "0644"
+  register: kafka_service_unit
+
+- name: Reload systemd and start Kafka broker
+  systemd:
+    name: kafka
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Restart Kafka broker if configuration changed
+  systemd:
+    name: kafka
+    state: restarted
+    enabled: true
+    daemon_reload: true
+  when: server_properties is changed or kafka_service_unit is changed or jmx_exporter_jar is changed or jmx_exporter_config is changed or zookeeper_service_unit is changed
+
+- name: Wait for Kafka client listener
+  block:
+    - name: Wait for Kafka client listener port on localhost
+      wait_for:
+        host: 127.0.0.1
+        port: "{{ kafka_client_port }}"
+        delay: 5
+        timeout: 180
+        state: started
+        msg: "Kafka client listener not available on {{ inventory_hostname }}"
+  rescue:
+    - name: Show Kafka service diagnostics
+      shell: |
+        set -o pipefail
+        systemctl status kafka --no-pager -l || true
+        echo "----- kafka journal tail -----"
+        journalctl -u kafka -n 120 --no-pager || true
+      args:
+        executable: /bin/bash
+      register: kafka_service_diagnostics
+      changed_when: false
+      become: yes
+
+    - name: Print Kafka service diagnostics
+      debug:
+        var: kafka_service_diagnostics.stdout_lines
+
+    - name: Fail Kafka listener check with diagnostics
+      fail:
+        msg: "Kafka client listener not available on {{ inventory_hostname }}. See diagnostics above."
+
+- name: Wait for JMX exporter endpoint
+  wait_for:
+    host: "{{ kafka_advertised_host }}"
+    port: "{{ kafka_jmx_exporter_port }}"
+    delay: 5
+    timeout: 60
+    state: started
+    msg: "Kafka JMX exporter not reachable on {{ inventory_hostname }}"
+
+- name: Unpack Kafka exporter
+  unarchive:
+    src: "{{ kafka_exporter_download_url }}"
+    dest: /opt
+    remote_src: true
+    creates: "/opt/kafka_exporter-{{ kafka_exporter_version }}.linux-amd64"
+
+- name: Symlink Kafka exporter directory
+  file:
+    src: "/opt/kafka_exporter-{{ kafka_exporter_version }}.linux-amd64"
+    dest: /opt/kafka-exporter
+    state: link
+    force: true
+
+- name: Create Kafka exporter systemd unit
+  template:
+    src: kafka_exporter.service.j2
+    dest: /etc/systemd/system/kafka_exporter.service
+    mode: "0644"
+
+- name: Reload systemd and start Kafka exporter
+  systemd:
+    name: kafka_exporter
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Wait for Kafka exporter endpoint
+  wait_for:
+    host: 127.0.0.1
+    port: "{{ kafka_exporter_port }}"
+    delay: 5
+    timeout: 60
+    state: started
+    msg: "Kafka exporter not reachable on {{ inventory_hostname }}"

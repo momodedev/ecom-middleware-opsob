@@ -1,0 +1,19 @@
+[Unit]
+Description=Kafka Exporter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=kafkaexp
+Group=kafkaexp
+Type=simple
+# The kafka_servers variable is computed in the role tasks to list all
+# kafka brokers in the cluster with port 9092 appended.  For example:
+# "10.0.0.4:9092,10.0.0.5:9092,10.0.0.6:9092"
+ExecStart=/usr/local/bin/kafka_exporter \
+  --kafka.server={{ kafka_servers }} \
+  --web.listen-address=:9308
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

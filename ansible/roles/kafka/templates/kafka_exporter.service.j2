@@ -1,0 +1,20 @@
+[Unit]
+Description=Kafka Exporter
+After=network.target kafka.service
+Requires=network.target kafka.service
+
+[Service]
+Type=simple
+User=kafka
+Group=kafka
+ExecStart=/opt/kafka-exporter/kafka_exporter \
+  --kafka.server={{ private_ip | default(ansible_default_ipv4.address) }}:{{ kafka_client_port }} \
+  --kafka.version={{ kafka_version }} \
+  --web.listen-address=0.0.0.0:{{ kafka_exporter_port }}
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

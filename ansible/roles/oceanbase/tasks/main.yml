@@ -1,0 +1,265 @@
+---
+# OceanBase 集群部署角色
+
+- name: Wait for SSH and verify connectivity
+  wait_for:
+    port: 22
+    host: "{{ ansible_host }}"
+    delay: 10
+    timeout: 600
+  vars:
+    ansible_connection: local
+  register: ssh_wait
+  retries: 3
+  delay: 30
+  until: ssh_wait is succeeded
+
+- name: Test SSH connection
+  command: echo "SSH OK"
+  register: ssh_test
+  changed_when: false
+  retries: 5
+  delay: 10
+  until: ssh_test is succeeded
+  ignore_errors: true
+
+- name: Fail if SSH is not working
+  fail:
+    msg: "Cannot establish SSH connection to {{ inventory_hostname }}"
+  when: ssh_test is failed
+
+# OS Preparation Tasks
+- name: Disable firewalld
+  systemd:
+    name: firewalld
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+
+- name: Disable SELinux
+  lineinfile:
+    path: /etc/selinux/config
+    regexp: '^SELINUX='
+    line: 'SELINUX=disabled'
+  notify: reboot required
+
+- name: Configure system limits for OceanBase
+  blockinfile:
+    path: /etc/security/limits.conf
+    block: |
+      root soft nofile 655350
+      root hard nofile 655350
+      * soft nofile 655350
+      * hard nofile 655350
+      * soft stack unlimited
+      * hard stack unlimited
+      * soft nproc 655360
+      * hard nproc 655360
+      * soft core unlimited
+      * hard core unlimited
+
+- name: Configure sysctl parameters for OceanBase
+  blockinfile:
+    path: /etc/sysctl.conf
+    block: |
+      # For OceanBase
+      fs.aio-max-nr = 1048576
+      net.core.somaxconn = 2048
+      net.core.netdev_max_backlog = 10000
+      net.core.rmem_default = 16777216
+      net.core.wmem_default = 16777216
+      net.core.rmem_max = 16777216
+      net.core.wmem_max = 16777216
+      net.ipv4.ip_forward = 0
+      net.ipv4.conf.default.rp_filter = 1
+      net.ipv4.tcp_syncookies = 1
+      net.ipv4.tcp_rmem = 4096 87380 16777216
+      net.ipv4.tcp_wmem = 4096 65536 16777216
+      net.ipv4.tcp_max_syn_backlog = 16384
+      net.ipv4.tcp_fin_timeout = 15
+      vm.swappiness = 0
+      vm.min_free_kbytes = 2097152
+      vm.overcommit_memory = 0
+      fs.file-max = 6573688
+      vm.max_map_count = 655360
+      kernel.core_pattern = /oceanbase/data/core-%e-%p-%t
+  notify: reload sysctl
+
+- name: Apply sysctl changes immediately
+  command: sysctl -p
+  ignore_errors: yes
+
+- name: Disable transparent huge pages
+  blockinfile:
+    path: /etc/rc.d/rc.local
+    block: |
+      if test -f /sys/kernel/mm/transparent_hugepage/enabled; then
+        echo never > /sys/kernel/mm/transparent_hugepage/enabled
+      fi
+      if test -f /sys/kernel/mm/transparent_hugepage/defrag; then
+        echo never > /sys/kernel/mm/transparent_hugepage/defrag
+      fi
+    create: yes
+    mode: 0755
+
+- name: Create admin user for OceanBase
+  user:
+    name: admin
+    group: admin
+    groups: admin
+    shell: /bin/bash
+    create_home: yes
+    state: present
+  ignore_errors: yes
+
+- name: Configure sudo for admin user
+  lineinfile:
+    path: /etc/sudoers
+    line: 'admin ALL=(ALL) NOPASSWD: ALL'
+    validate: 'visudo -cf %s'
+
+- name: Set admin user password
+  user:
+    name: admin
+    password: "{{ 'admin' | password_hash('sha512') }}"
+    update_password: on_create
+  ignore_errors: yes
+
+- name: Setup SSH key for admin user
+  user:
+    name: admin
+    generate_ssh_key: yes
+    ssh_key_bits: 2048
+    ssh_key_file: .ssh/id_rsa
+  ignore_errors: yes
+
+- name: Create OceanBase directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: admin
+    group: admin
+    mode: '0755'
+  loop:
+    - /oceanbase
+    - /oceanbase/server
+    - /oceanbase/data
+    - /oceanbase/redo
+    - /home/admin/oceanbase
+
+- name: Mount data disk for OceanBase (if available)
+  mount:
+    path: /oceanbase
+    src: /dev/mapper/vgob-lvob
+    fstype: xfs
+    opts: defaults
+    state: mounted
+  ignore_errors: yes
+
+- name: Download OceanBase all-in-one package
+  get_url:
+    url: https://github.com/oceanbase/oceanbase/releases/download/v4.3.5.0/oceanbase-all-in-one-4.3.5_bp4_20250910.el8.x86_64.tar.gz
+    dest: /tmp/oceanbase-all-in-one.tar.gz
+    owner: admin
+    group: admin
+    mode: '0644'
+  become_user: admin
+  ignore_errors: yes
+  tags: download
+
+- name: Extract OceanBase package
+  unarchive:
+    src: /tmp/oceanbase-all-in-one.tar.gz
+    dest: /home/admin/
+    owner: admin
+    group: admin
+    remote_src: yes
+  become_user: admin
+  ignore_errors: yes
+  tags: extract
+
+- name: Install OceanBase using install script
+  shell: |
+    cd /home/admin/oceanbase-all-in-one/bin
+    ./install.sh
+  become_user: admin
+  environment:
+    PATH: /home/admin/.local/bin:/home/admin/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin
+  ignore_errors: yes
+  tags: install
+
+- name: Source OceanBase environment
+  lineinfile:
+    path: /home/admin/.bashrc
+    line: 'source ~/.oceanbase-all-in-one/bin/env.sh'
+    create: yes
+  become_user: admin
+
+- name: Update /etc/hosts with all observer nodes
+  blockinfile:
+    path: /etc/hosts
+    block: |
+      {% for host in groups['oceanbase'] %}
+      {{ hostvars[host]['private_ip'] | default(hostvars[host]['ansible_host']) }} {{ host }}
+      {% endfor %}
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - OceanBase hosts"
+
+- name: Configure SSH trust between observer nodes
+  shell: |
+    su - admin -c "ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa -q"
+    {% for host in groups['oceanbase'] %}
+    su - admin -c "ssh-copy-id -i ~/.ssh/id_rsa.pub admin@{{ hostvars[host]['private_ip'] | default(hostvars[host]['ansible_host']) }}" 2>/dev/null || true
+    {% endfor %}
+  become_user: admin
+  ignore_errors: yes
+  tags: ssh_trust
+
+- name: Generate cluster deployment YAML
+  template:
+    src: obcluster.yaml.j2
+    dest: /home/admin/obcluster.yaml
+    owner: admin
+    group: admin
+    mode: '0644'
+  become_user: admin
+  tags: config
+
+- name: Deploy OceanBase cluster using OBD
+  shell: |
+    source ~/.oceanbase-all-in-one/bin/env.sh
+    obd cluster deploy {{ oceanbase_cluster_name }} -c /home/admin/obcluster.yaml
+  become_user: admin
+  environment:
+    PATH: /home/admin/.local/bin:/home/admin/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/admin/.oceanbase-all-in-one/bin
+  register: obd_deploy
+  ignore_errors: yes
+  tags: deploy
+
+- name: Display deployment result
+  debug:
+    var: obd_deploy.stdout
+  when: obd_deploy.stdout is defined
+
+- name: Start OceanBase cluster
+  shell: |
+    source ~/.oceanbase-all-in-one/bin/env.sh
+    obd cluster start {{ oceanbase_cluster_name }}
+  become_user: admin
+  environment:
+    PATH: /home/admin/.local/bin:/home/admin/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/admin/.oceanbase-all-in-one/bin
+  ignore_errors: yes
+  tags: start
+
+- name: List OceanBase clusters
+  shell: |
+    source ~/.oceanbase-all-in-one/bin/env.sh
+    obd cluster list
+  become_user: admin
+  register: cluster_list
+  ignore_errors: yes
+  tags: list
+
+- name: Display cluster information
+  debug:
+    var: cluster_list.stdout
+  when: cluster_list.stdout is defined
