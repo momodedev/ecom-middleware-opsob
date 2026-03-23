@@ -35,10 +35,17 @@ control_vnet_name           = "control-ob-vnet"
 deploy_mode                 = "together"  # Deploy together with control node
 
 # SSH Key Configuration
-# Option 1: Leave empty to auto-generate a new key pair (recommended for first deployment)
-# Option 2: Specify absolute path to existing public key file
-ssh_public_key_path         = ""
-ssh_private_key_path        = "~/.ssh/oceanbase_deploy"
+# IMPORTANT: You MUST generate or specify an SSH key pair before deployment
+# 
+# Option 1: Generate a new key pair (run this command first):
+#   ssh-keygen -t ed25519 -f ~/.ssh/oceanbase_deploy -N ""
+# Then set:
+ssh_public_key_path         = "/home/azureadmin/.ssh/oceanbase_deploy.pub"
+ssh_private_key_path        = "/home/azureadmin/.ssh/oceanbase_deploy"
+#
+# Option 2: Use existing key if you have one:
+#   ls -la ~/.ssh/*.pub
+# Then update the paths above accordingly
 
 # Allowed CIDR Blocks (update with your network)
 oceanbase_allowed_cidrs     = ["10.0.0.0/8"]
