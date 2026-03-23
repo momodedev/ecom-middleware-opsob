@@ -179,6 +179,19 @@ variable "control_vnet_name" {
   type        = string
   default     = "control-vnet"
   description = "Name of the control node Virtual Network for VNet peering."
+  description = "Name of the existing control-node Virtual Network where OceanBase observers will be deployed."
+}
+
+variable "control_subnet_name" {
+  type        = string
+  default     = "control-ob-subnet"
+  description = "Name of the existing control-node subnet where OceanBase observers will be deployed."
+}
+
+variable "control_nsg_name" {
+  type        = string
+  default     = "control-ob-nsg"
+  description = "Name of the existing control-node NSG. OceanBase port rules will be added to this NSG."
 }
 
 variable "enable_vnet_peering" {

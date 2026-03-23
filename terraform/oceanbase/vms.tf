@@ -121,6 +121,12 @@ resource "azurerm_managed_disk" "oceanbase_data" {
     Component   = "oceanbase-data-disk"
     Index       = count.index
   }
+
+  lifecycle {
+    # Existing disks were created as Premium_LRS; Azure rejects in-place SKU upgrade on attached disks.
+    # New disks created by this module will use PremiumV2_LRS as specified above.
+    ignore_changes = [storage_account_type]
+  }
 }
 
 # Attach data disks to observer VMs
@@ -148,6 +154,10 @@ resource "azurerm_managed_disk" "oceanbase_redo" {
     Environment = "production"
     Component   = "oceanbase-redo-disk"
     Index       = count.index
+  }
+
+  lifecycle {
+    ignore_changes = [storage_account_type]
   }
 }
 

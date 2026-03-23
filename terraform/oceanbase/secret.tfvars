@@ -27,9 +27,12 @@ enable_availability_zones   = true
 oceanbase_vm_zone           = ""  # Leave empty for automatic zone distribution
 
 # VNet Peering (for Ansible deployment from control node)
-enable_vnet_peering         = true
-control_resource_group_name = "control-ob-rg"  # Same RG as control node
+# Control node network - OceanBase observers are deployed into the same VNet/subnet/NSG
+enable_vnet_peering         = false  # Not needed - observers share the control-node VNet
+control_resource_group_name = "control-ob-rg"
 control_vnet_name           = "control-ob-vnet"
+control_subnet_name         = "control-ob-subnet"
+control_nsg_name            = "control-ob-nsg"
 
 # Deployment Mode
 deploy_mode                 = "together"  # Deploy together with control node

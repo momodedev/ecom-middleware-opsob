@@ -16,135 +16,127 @@ locals {
   oceanbase_rg_id       = azurerm_resource_group.oceanbase.id
 }
 
-# OceanBase Virtual Network
-resource "azurerm_virtual_network" "oceanbase" {
-  name                = var.oceanbase_vnet_name
-  resource_group_name = local.oceanbase_rg_name
+# Look up existing control-node VNet/subnet/NSG
+# OceanBase observers are deployed into the same VNet/subnet/NSG as the control node
+data "azurerm_virtual_network" "control" {
+  name                = var.control_vnet_name
+  resource_group_name = var.control_resource_group_name
+}
+
+data "azurerm_subnet" "control" {
+  name                 = var.control_subnet_name
+  virtual_network_name = var.control_vnet_name
+  resource_group_name  = var.control_resource_group_name
+}
+
+data "azurerm_network_security_group" "control" {
+  name                = var.control_nsg_name
+  resource_group_name = var.control_resource_group_name
+}
+
+locals {
+  oceanbase_vnet_name   = data.azurerm_virtual_network.control.name
+  oceanbase_vnet_id     = data.azurerm_virtual_network.control.id
+  oceanbase_subnet_name = data.azurerm_subnet.control.name
+  oceanbase_subnet_id   = data.azurerm_subnet.control.id
+}
+
+# Reuse control node's NSG; add OceanBase-specific inbound rules to it
+locals {
+  oceanbase_nsg_id     = data.azurerm_network_security_group.control.id
+  # control-ob-nsg is already associated with control-ob-subnet at subnet level;
+  # no NIC-level re-attachment needed for observer VMs
+  attach_oceanbase_nsg = false
+}
+
+# Allow SSH to observer VMs from within the VNet (required for Ansible from control node)
+resource "azurerm_network_security_rule" "ob_observer_ssh" {
+  name                        = "ob-observer-ssh"
+  priority                    = 200
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "22"
+  source_address_prefix       = "VirtualNetwork"
+  destination_address_prefix  = "*"
+  resource_group_name         = var.control_resource_group_name
+  network_security_group_name = var.control_nsg_name
+}
+
+resource "azurerm_network_security_rule" "ob_mysql" {
+  name                        = "ob-mysql"
+  priority                    = 210
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = tostring(var.oceanbase_mysql_port)
+  source_address_prefix       = "VirtualNetwork"
+  destination_address_prefix  = "*"
+  resource_group_name         = var.control_resource_group_name
+  network_security_group_name = var.control_nsg_name
+}
+
+resource "azurerm_network_security_rule" "ob_rpc" {
+  name                        = "ob-rpc"
+  priority                    = 220
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "2882"
+  source_address_prefix       = "VirtualNetwork"
+  destination_address_prefix  = "*"
+  resource_group_name         = var.control_resource_group_name
+  network_security_group_name = var.control_nsg_name
+}
+
+resource "azurerm_network_security_rule" "ob_obshell" {
+  name                        = "ob-obshell"
+  priority                    = 230
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "2886"
+  source_address_prefix       = "VirtualNetwork"
+  destination_address_prefix  = "*"
+  resource_group_name         = var.control_resource_group_name
+  network_security_group_name = var.control_nsg_name
+}
+
+resource "azurerm_network_security_rule" "ob_monitoring" {
+  name                        = "ob-monitoring"
+  priority                    = 240
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_ranges     = ["9100", "9308"]
+  source_address_prefix       = "VirtualNetwork"
+  destination_address_prefix  = "*"
+  resource_group_name         = var.control_resource_group_name
+  network_security_group_name = var.control_nsg_name
+}
+
+# NAT Gateway - provides outbound internet for observer VMs (which have no public IPs)
+# The control node's own public IP handles its outbound traffic; NAT only affects VMs without one.
+resource "azurerm_public_ip" "oceanbase_nat" {
+  count               = var.enable_nat_gateway ? 1 : 0
+  name                = "oceanbase-nat-ip"
   location            = local.oceanbase_rg_location
-  address_space       = ["10.1.0.0/16"]
+  resource_group_name = local.oceanbase_rg_name
+  allocation_method   = "Static"
+  sku                 = "Standard"
 
   tags = {
     Environment = "production"
-    Component   = "oceanbase-network"
-    ManagedBy   = "terraform"
-  }
-
-  lifecycle {
-    ignore_changes = [address_space, tags]
-  }
-}
-
-locals {
-  oceanbase_vnet_name = azurerm_virtual_network.oceanbase.name
-  oceanbase_vnet_id   = azurerm_virtual_network.oceanbase.id
-}
-
-# OceanBase Subnet
-resource "azurerm_subnet" "oceanbase" {
-  name                         = var.oceanbase_subnet_name
-  resource_group_name          = local.oceanbase_rg_name
-  virtual_network_name         = local.oceanbase_vnet_name
-  address_prefixes             = ["10.1.1.0/24"]
-  default_outbound_access_enabled = false
-
-  lifecycle {
-    ignore_changes = [address_prefixes]
-  }
-}
-
-locals {
-  oceanbase_subnet_name = azurerm_subnet.oceanbase.name
-  oceanbase_subnet_id   = azurerm_subnet.oceanbase.id
-}
-
-# OceanBase Network Security Group
-locals {
-  oceanbase_nsg_id      = var.oceanbase_nsg_id != "" ? var.oceanbase_nsg_id : azurerm_network_security_group.oceanbase[0].id
-  oceanbase_nsg_rg_name = var.oceanbase_nsg_id != "" ? split("/", var.oceanbase_nsg_id)[4] : local.oceanbase_rg_name
-  oceanbase_nsg_name    = var.oceanbase_nsg_id != "" ? split("/", var.oceanbase_nsg_id)[8] : azurerm_network_security_group.oceanbase[0].name
-  attach_oceanbase_nsg  = var.oceanbase_nsg_id != "" || true
-}
-
-resource "azurerm_network_security_group" "oceanbase" {
-  count               = var.oceanbase_nsg_id != "" ? 0 : 1
-  name                = var.oceanbase_nsg_name
-  location            = local.oceanbase_rg_location
-  resource_group_name = local.oceanbase_rg_name
-
-  security_rule {
-    name                       = "mysql"
-    priority                   = 100
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = tostring(var.oceanbase_mysql_port)
-    source_address_prefixes    = var.oceanbase_allowed_cidrs
-    destination_address_prefix = "*"
-  }
-
-  security_rule {
-    name                       = "rpc"
-    priority                   = 110
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "2882"
-    source_address_prefixes    = var.oceanbase_allowed_cidrs
-    destination_address_prefix = "*"
-  }
-
-  security_rule {
-    name                       = "obshell"
-    priority                   = 120
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "2886"
-    source_address_prefixes    = var.oceanbase_allowed_cidrs
-    destination_address_prefix = "*"
-  }
-
-  security_rule {
-    name                       = "ssh"
-    priority                   = 130
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "22"
-    source_address_prefixes    = var.ssh_allowed_cidrs
-    destination_address_prefix = "*"
-  }
-
-  security_rule {
-    name                       = "monitoring"
-    priority                   = 140
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_ranges    = ["9100", "9308"]
-    source_address_prefixes    = var.oceanbase_allowed_cidrs
-    destination_address_prefix = "*"
-  }
-
-  tags = {
-    Environment = "production"
-    Component   = "oceanbase-nsg"
+    Component   = "oceanbase-nat"
     ManagedBy   = "terraform"
   }
 }
 
-resource "azurerm_subnet_network_security_group_association" "oceanbase" {
-  count                     = local.attach_oceanbase_nsg ? 1 : 0
-  subnet_id                 = local.oceanbase_subnet_id
-  network_security_group_id = local.oceanbase_nsg_id
-}
-
-# NAT Gateway for outbound internet access
 resource "azurerm_nat_gateway" "oceanbase" {
   count               = var.enable_nat_gateway ? 1 : 0
   name                = "oceanbase-nat"
@@ -159,22 +151,18 @@ resource "azurerm_nat_gateway" "oceanbase" {
 }
 
 resource "azurerm_subnet_nat_gateway_association" "oceanbase" {
-  count             = var.enable_nat_gateway ? 1 : 0
-  subnet_id         = local.oceanbase_subnet_id
-  nat_gateway_id    = azurerm_nat_gateway.oceanbase[0].id
+  count          = var.enable_nat_gateway ? 1 : 0
+  subnet_id      = local.oceanbase_subnet_id
+  nat_gateway_id = azurerm_nat_gateway.oceanbase[0].id
 }
 
-# VNet Peering with Control Node (for Ansible deployment)
-resource "azurerm_virtual_network_peering" "oceanbase_to_control" {
-  count                       = var.enable_vnet_peering && var.deploy_mode == "together" ? 1 : 0
-  name                        = "oceanbase-to-control"
-  resource_group_name         = local.oceanbase_rg_name
-  virtual_network_name        = local.oceanbase_vnet_name
-  remote_virtual_network_id   = "/subscriptions/${var.ARM_SUBSCRIPTION_ID}/resourceGroups/${var.control_resource_group_name}/providers/Microsoft.Network/virtualNetworks/${var.control_vnet_name}"
-  allow_virtual_network_access = true
-  allow_forwarded_traffic      = true
-  allow_gateway_transit        = false
+resource "azurerm_nat_gateway_public_ip_association" "oceanbase" {
+  count                = var.enable_nat_gateway ? 1 : 0
+  nat_gateway_id       = azurerm_nat_gateway.oceanbase[0].id
+  public_ip_address_id = azurerm_public_ip.oceanbase_nat[0].id
 }
+
+# VNet peering removed: OceanBase observers are now in the same VNet as the control node.
 
 # Generate Ansible inventory from Terraform state
 locals {
@@ -203,6 +191,10 @@ resource "local_file" "ansible_inventory" {
 resource "null_resource" "wait_for_ssh" {
   depends_on = [
     azurerm_linux_virtual_machine.oceanbase_observers,
+    azurerm_virtual_machine_data_disk_attachment.oceanbase_data,
+    azurerm_virtual_machine_data_disk_attachment.oceanbase_redo,
+    azurerm_network_security_rule.ob_observer_ssh,
+    azurerm_subnet_nat_gateway_association.oceanbase,
     local_file.ansible_inventory
   ]
 
@@ -262,8 +254,7 @@ resource "null_resource" "wait_for_ssh" {
 # Deploy OceanBase cluster using Ansible
 resource "null_resource" "deploy_oceanbase" {
   depends_on = [
-    null_resource.wait_for_ssh,
-    azurerm_virtual_network_peering.oceanbase_to_control
+    null_resource.wait_for_ssh
   ]
 
   provisioner "local-exec" {
@@ -308,6 +299,8 @@ resource "null_resource" "deploy_oceanbase" {
 }
 
 # Deploy monitoring tools (Grafana & Prometheus) on control node
+# Deploy monitoring tools (Grafana & Prometheus) on this control node (localhost).
+# terraform apply runs ON the control node, so local-exec installs monitoring directly here.
 resource "null_resource" "deploy_monitoring" {
   depends_on = [
     null_resource.deploy_oceanbase
@@ -315,42 +308,50 @@ resource "null_resource" "deploy_monitoring" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      echo "=== Deploying Monitoring Stack ==="
-      
+      echo "=== Deploying Monitoring Stack (Grafana + Prometheus) on control node ==="
+
       PLAYBOOK_FILE="${path.module}/../../ansible/playbooks/deploy_monitoring_playbook.yml"
-      INVENTORY_FILE="${path.module}/../../ansible/inventory/control_node"
       REPO_ROOT="${path.module}/../.."
-      
+
       cd "$REPO_ROOT/ansible"
-      
+
       # Activate virtual environment if it exists
       if [ -f ~/ansible-venv/bin/activate ]; then
         source ~/ansible-venv/bin/activate
       fi
-      
-      # Check if control node inventory exists
-      if [ ! -f "$INVENTORY_FILE" ]; then
-        echo "Warning: Control node inventory not found at $INVENTORY_FILE"
-        echo "Skipping monitoring deployment. You can deploy manually later."
-        echo "Run: ansible-playbook -i $INVENTORY_FILE $PLAYBOOK_FILE"
-        exit 0
-      fi
-      
-      # Deploy monitoring stack
+
+      # Generate a temporary monitoring inventory:
+      #   management_node = this control node (running Terraform, so localhost)
+      #   kafka_broker    = OceanBase observer IPs (Prometheus scrape targets for node_exporter)
+      MONITORING_INVENTORY="/tmp/ob_monitoring_inventory_$$.ini"
+
+      echo "[management_node]" > "$MONITORING_INVENTORY"
+      echo "localhost ansible_connection=local" >> "$MONITORING_INVENTORY"
+      echo "" >> "$MONITORING_INVENTORY"
+      echo "[kafka_broker]" >> "$MONITORING_INVENTORY"
+      for ip in ${join(" ", [for vm in azurerm_linux_virtual_machine.oceanbase_observers : vm.private_ip_address])}; do
+        echo "$ip ansible_user=oceanadmin ansible_ssh_private_key_file=${var.ssh_private_key_path}" >> "$MONITORING_INVENTORY"
+      done
+
+      echo "Monitoring inventory:"
+      cat "$MONITORING_INVENTORY"
+
+      # Install Prometheus + Grafana on this control node
       echo "Running monitoring deployment playbook..."
-      ansible-playbook -i "$INVENTORY_FILE" "$PLAYBOOK_FILE" || {
+      ansible-playbook -i "$MONITORING_INVENTORY" "$PLAYBOOK_FILE" || {
         echo "Warning: Monitoring deployment encountered errors"
-        echo "You can retry manually: ansible-playbook -i $INVENTORY_FILE $PLAYBOOK_FILE"
+        echo "Retry: ansible-playbook -i $MONITORING_INVENTORY $PLAYBOOK_FILE"
       }
-      
-      echo "✓ Monitoring stack deployment completed!"
+
+      rm -f "$MONITORING_INVENTORY"
+      echo "✓ Monitoring deployed on control node: Grafana :3000, Prometheus :9090"
     EOT
-    
+
     interpreter = ["/bin/bash", "-c"]
   }
-  
+
   triggers = {
-    always_run = timestamp()
+    always_run     = timestamp()
     ansible_run_id = var.ansible_run_id
   }
 }
