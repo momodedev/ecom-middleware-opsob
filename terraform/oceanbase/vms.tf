@@ -83,6 +83,11 @@ resource "azurerm_linux_virtual_machine" "oceanbase_observers" {
     name      = "9-base"
   }
 
+  # Bootstrap with cloud-init for system dependencies and disk mounting
+  custom_data = base64encode(templatefile("${path.module}/cloud-init.tpl", {
+    oceanbase_admin_username = "oceanadmin"
+  }))
+
   tags = {
     Environment = "production"
     Component   = "oceanbase-observer"
@@ -91,7 +96,11 @@ resource "azurerm_linux_virtual_machine" "oceanbase_observers" {
   }
 
   lifecycle {
-    ignore_changes = [tags]
+    ignore_changes = [
+      bypass_platform_safety_checks_on_user_schedule_enabled,
+      custom_data,
+      tags
+    ]
   }
 }
 
