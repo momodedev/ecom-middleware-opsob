@@ -101,7 +101,7 @@ resource "azurerm_managed_disk" "oceanbase_data" {
   name                 = "ob-data-disk-${count.index}"
   location             = local.oceanbase_rg_location
   resource_group_name  = local.oceanbase_rg_name
-  storage_account_type = "Premium_LRS"
+  storage_account_type = "PremiumV2_LRS"  # Premium SSD v2 LRS for better performance
   create_option        = "Empty"
   disk_size_gb         = var.oceanbase_data_disk_size_gb
 
@@ -129,7 +129,7 @@ resource "azurerm_managed_disk" "oceanbase_redo" {
   name                 = "ob-redo-disk-${count.index}"
   location             = local.oceanbase_rg_location
   resource_group_name  = local.oceanbase_rg_name
-  storage_account_type = "Premium_LRS"
+  storage_account_type = "PremiumV2_LRS"  # Premium SSD v2 LRS for better performance
   create_option        = "Empty"
   disk_size_gb         = var.oceanbase_redo_disk_size_gb
 
