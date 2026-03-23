@@ -61,7 +61,7 @@ resource "azurerm_linux_virtual_machine" "oceanbase_observers" {
 
   admin_ssh_key {
     username   = "oceanadmin"
-    public_key = file(pathexpand(var.ssh_public_key_path))
+    public_key = var.ssh_public_key_path != "" ? file(pathexpand(var.ssh_public_key_path)) : tls_private_key.deploy[0].public_key_openssh
   }
 
   os_disk {

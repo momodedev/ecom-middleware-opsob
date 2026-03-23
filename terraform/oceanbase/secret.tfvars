@@ -35,8 +35,10 @@ control_vnet_name           = "control-ob-vnet"
 deploy_mode                 = "together"  # Deploy together with control node
 
 # SSH Key Configuration
-ssh_public_key_path         = "~/.ssh/id_ed25519.pub"
-ssh_private_key_path        = "~/.ssh/id_ed25519"
+# Option 1: Leave empty to auto-generate a new key pair (recommended for first deployment)
+# Option 2: Specify absolute path to existing public key file
+ssh_public_key_path         = ""
+ssh_private_key_path        = "~/.ssh/oceanbase_deploy"
 
 # Allowed CIDR Blocks (update with your network)
 oceanbase_allowed_cidrs     = ["10.0.0.0/8"]

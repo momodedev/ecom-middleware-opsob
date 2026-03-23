@@ -16,6 +16,17 @@ locals {
   oceanbase_rg_id       = azurerm_resource_group.oceanbase.id
 }
 
+# Generate SSH key pair if no existing key is provided
+resource "tls_private_key" "deploy" {
+  count     = var.ssh_public_key_path == "" || !fileexists(pathexpand(var.ssh_public_key_path)) ? 1 : 0
+  algorithm = "ED25519"
+
+  save_local {
+    path     = pathexpand(var.ssh_private_key_path)
+    encoding = "PEM"
+  }
+}
+
 # OceanBase Virtual Network
 resource "azurerm_virtual_network" "oceanbase" {
   name                = var.oceanbase_vnet_name
