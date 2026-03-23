@@ -126,7 +126,7 @@ resource "azurerm_network_security_group" "oceanbase" {
     access                     = "Allow"
     protocol                   = "Tcp"
     source_port_range          = "*"
-    destination_port_range     = "9100,9308"
+    destination_port_ranges    = ["9100", "9308"]
     source_address_prefixes    = var.oceanbase_allowed_cidrs
     destination_address_prefix = "*"
   }
