@@ -390,9 +390,19 @@
     oceanbase_cluster_cached_status: "{{ oceanbase_cluster_cached_status_cmd.stdout | trim | lower }}"
   run_once: true
 
+- name: Sync generated YAML to OBD cached config for existing cluster
+  shell: |
+    cp -f {{ oceanbase_admin_home }}/obcluster.yaml {{ oceanbase_admin_home }}/.obd/cluster/{{ oceanbase_cluster_name }}/config.yaml
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become_user: "{{ oceanbase_admin_user }}"
+  when:
+    - oceanbase_obd_recreate_existing_cluster | bool
+    - oceanbase_cluster_cached_status | default('') | length > 0
+
 - name: Redeploy existing OceanBase cluster using OBD
   shell: |
-    {{ oceanbase_obd_cmd_prefix }}obd cluster redeploy {{ oceanbase_cluster_name }} -c {{ oceanbase_admin_home }}/obcluster.yaml
+    {{ oceanbase_obd_cmd_prefix }}obd cluster redeploy {{ oceanbase_cluster_name }} --confirm
   delegate_to: "{{ oceanbase_obd_controller_host }}"
   run_once: true
   become_user: "{{ oceanbase_admin_user }}"
