@@ -10,6 +10,9 @@ oceanbase_redo_disk_size_gb: 200
 oceanbase_mysql_port: 2881
 oceanbase_rpc_port: 2882
 oceanbase_obshell_port: 2886
+oceanbase_all_in_one_url: "https://github.com/oceanbase/oceanbase/releases/download/v4.3.5.0/oceanbase-all-in-one-4.3.5_bp4_20250910.el8.x86_64.tar.gz"
+oceanbase_data_mount_device: "/dev/mapper/vgob-lvob"
+oceanbase_strict_mount_check: true
 
 # Deployment paths
 oceanbase_home_dir: /home/admin/oceanbase

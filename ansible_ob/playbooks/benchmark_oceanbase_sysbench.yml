@@ -1,0 +1,132 @@
+---
+- name: Run OceanBase sysbench benchmark and export CSV
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  become: true
+  vars:
+    benchmark_label: "ob_cluster"
+    benchmark_output_dir: "/tmp/oceanbase-bench"
+    benchmark_output_csv: "{{ benchmark_output_dir }}/{{ benchmark_label }}.csv"
+
+    mysql_host: "127.0.0.1"
+    mysql_port: 2881
+    mysql_user: "root@sys"
+    mysql_password: "OceanBase#!123"
+    mysql_db: "sbtest"
+
+    benchmark_tables: 10
+    benchmark_table_size: 100000
+    benchmark_warmup_sec: 30
+    benchmark_run_sec: 120
+    benchmark_report_interval: 10
+
+    benchmark_threads:
+      - 16
+      - 32
+      - 64
+      - 128
+      - 256
+    benchmark_workloads:
+      - oltp_read_only
+      - oltp_write_only
+      - oltp_read_write
+
+    benchmark_prepare_data: true
+    benchmark_cleanup_data: false
+
+  tasks:
+    - name: Ensure benchmark output directory exists
+      file:
+        path: "{{ benchmark_output_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Install sysbench on Debian family
+      apt:
+        name: sysbench
+        state: present
+        update_cache: true
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Install sysbench on RedHat family
+      dnf:
+        name: sysbench
+        state: present
+      when: ansible_facts['os_family'] == 'RedHat'
+
+    - name: Initialize CSV header
+      copy:
+        dest: "{{ benchmark_output_csv }}"
+        mode: "0644"
+        content: "timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors\n"
+
+    - name: Prepare sysbench data set
+      shell: |
+        set -euo pipefail
+        sysbench /usr/share/sysbench/oltp_common.lua \
+          --db-driver=mysql \
+          --mysql-host={{ mysql_host | quote }} \
+          --mysql-port={{ mysql_port }} \
+          --mysql-user={{ mysql_user | quote }} \
+          --mysql-password={{ mysql_password | quote }} \
+          --mysql-db={{ mysql_db | quote }} \
+          --tables={{ benchmark_tables }} \
+          --table-size={{ benchmark_table_size }} \
+          prepare
+      when: benchmark_prepare_data | bool
+
+    - name: Run benchmark matrix and collect CSV
+      shell: |
+        set -euo pipefail
+        now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        result=$(sysbench /usr/share/sysbench/{{ item.0 }}.lua \
+          --db-driver=mysql \
+          --mysql-host={{ mysql_host | quote }} \
+          --mysql-port={{ mysql_port }} \
+          --mysql-user={{ mysql_user | quote }} \
+          --mysql-password={{ mysql_password | quote }} \
+          --mysql-db={{ mysql_db | quote }} \
+          --tables={{ benchmark_tables }} \
+          --table-size={{ benchmark_table_size }} \
+          --threads={{ item.1 }} \
+          --time={{ benchmark_run_sec }} \
+          --report-interval={{ benchmark_report_interval }} \
+          --db-ps-mode=disable \
+          run)
+
+        tps=$(echo "$result" | awk -F'[()]' '/transactions:/ {gsub(/ per sec\./, "", $2); print $2}' | awk '{print $1}' | tail -1)
+        p95=$(echo "$result" | awk '/95th percentile:/ {print $3}' | tail -1)
+        avg_lat=$(echo "$result" | awk '/avg:/ {print $2}' | tail -1)
+        total_q=$(echo "$result" | awk '/queries performed:/ {getline; print $1}' | tr -d '()' | tail -1)
+        errs=$(echo "$result" | awk -F': ' '/ignored errors:/ {print $2}' | awk '{print $1}' | tail -1)
+
+        tps=${tps:-0}
+        p95=${p95:-0}
+        avg_lat=${avg_lat:-0}
+        total_q=${total_q:-0}
+        errs=${errs:-0}
+
+        echo "$now,{{ benchmark_label }},{{ item.0 }},{{ item.1 }},$tps,$p95,$avg_lat,$total_q,$errs" >> {{ benchmark_output_csv | quote }}
+      loop: "{{ benchmark_workloads | product(benchmark_threads) | list }}"
+      loop_control:
+        label: "{{ item.0 }} threads={{ item.1 }}"
+
+    - name: Cleanup sysbench data set
+      shell: |
+        set -euo pipefail
+        sysbench /usr/share/sysbench/oltp_common.lua \
+          --db-driver=mysql \
+          --mysql-host={{ mysql_host | quote }} \
+          --mysql-port={{ mysql_port }} \
+          --mysql-user={{ mysql_user | quote }} \
+          --mysql-password={{ mysql_password | quote }} \
+          --mysql-db={{ mysql_db | quote }} \
+          --tables={{ benchmark_tables }} \
+          --table-size={{ benchmark_table_size }} \
+          cleanup
+      when: benchmark_cleanup_data | bool
+
+    - name: Show benchmark CSV path
+      debug:
+        msg: "Benchmark complete. CSV saved to {{ benchmark_output_csv }}"

@@ -21,7 +21,6 @@
   retries: 5
   delay: 10
   until: ssh_test is succeeded
-  ignore_errors: true
 
 - name: Fail if SSH is not working
   fail:
@@ -30,11 +29,11 @@
 
 # OS Preparation Tasks
 - name: Disable firewalld
-  systemd:
+  ansible.builtin.systemd:
     name: firewalld
     state: stopped
     enabled: no
-  ignore_errors: yes
+  ignore_errors: true
 
 - name: Disable SELinux
   lineinfile:
@@ -86,8 +85,8 @@
   notify: reload sysctl
 
 - name: Apply sysctl changes immediately
-  command: sysctl -p
-  ignore_errors: yes
+  ansible.builtin.command: sysctl -p
+  ignore_errors: true
 
 - name: Disable transparent huge pages
   blockinfile:
@@ -110,7 +109,6 @@
     shell: /bin/bash
     create_home: yes
     state: present
-  ignore_errors: yes
 
 - name: Configure sudo for admin user
   lineinfile:
@@ -123,7 +121,6 @@
     name: admin
     password: "{{ 'admin' | password_hash('sha512') }}"
     update_password: on_create
-  ignore_errors: yes
 
 - name: Setup SSH key for admin user
   user:
@@ -131,7 +128,18 @@
     generate_ssh_key: yes
     ssh_key_bits: 2048
     ssh_key_file: .ssh/id_rsa
-  ignore_errors: yes
+
+- name: Check OceanBase data mount device
+  stat:
+    path: "{{ oceanbase_data_mount_device }}"
+  register: oceanbase_mount_device
+
+- name: Fail when expected OceanBase data mount device is missing
+  fail:
+    msg: "Expected OceanBase mount device {{ oceanbase_data_mount_device }} was not found on {{ inventory_hostname }}"
+  when:
+    - oceanbase_strict_mount_check | bool
+    - not oceanbase_mount_device.stat.exists
 
 - name: Create OceanBase directories
   file:
@@ -150,21 +158,19 @@
 - name: Mount data disk for OceanBase (if available)
   mount:
     path: /oceanbase
-    src: /dev/mapper/vgob-lvob
+    src: "{{ oceanbase_data_mount_device }}"
     fstype: xfs
     opts: defaults
     state: mounted
-  ignore_errors: yes
 
 - name: Download OceanBase all-in-one package
   get_url:
-    url: https://github.com/oceanbase/oceanbase/releases/download/v4.3.5.0/oceanbase-all-in-one-4.3.5_bp4_20250910.el8.x86_64.tar.gz
+    url: "{{ oceanbase_all_in_one_url }}"
     dest: /tmp/oceanbase-all-in-one.tar.gz
     owner: admin
     group: admin
     mode: '0644'
   become_user: admin
-  ignore_errors: yes
   tags: download
 
 - name: Extract OceanBase package
@@ -175,7 +181,6 @@
     group: admin
     remote_src: yes
   become_user: admin
-  ignore_errors: yes
   tags: extract
 
 - name: Install OceanBase using install script
@@ -185,8 +190,17 @@
   become_user: admin
   environment:
     PATH: /home/admin/.local/bin:/home/admin/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin
-  ignore_errors: yes
   tags: install
+
+- name: Verify OceanBase environment script exists
+  stat:
+    path: /home/admin/.oceanbase-all-in-one/bin/env.sh
+  register: oceanbase_env_script
+
+- name: Fail when OceanBase install did not provide env.sh
+  fail:
+    msg: "OceanBase install is incomplete on {{ inventory_hostname }}. Missing /home/admin/.oceanbase-all-in-one/bin/env.sh"
+  when: not oceanbase_env_script.stat.exists
 
 - name: Source OceanBase environment
   lineinfile:
@@ -211,7 +225,6 @@
     su - admin -c "ssh-copy-id -i ~/.ssh/id_rsa.pub admin@{{ hostvars[host]['private_ip'] | default(hostvars[host]['ansible_host']) }}" 2>/dev/null || true
     {% endfor %}
   become_user: admin
-  ignore_errors: yes
   tags: ssh_trust
 
 - name: Generate cluster deployment YAML
@@ -232,7 +245,7 @@
   environment:
     PATH: /home/admin/.local/bin:/home/admin/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/admin/.oceanbase-all-in-one/bin
   register: obd_deploy
-  ignore_errors: yes
+  failed_when: obd_deploy.rc != 0
   tags: deploy
 
 - name: Display deployment result
@@ -247,7 +260,8 @@
   become_user: admin
   environment:
     PATH: /home/admin/.local/bin:/home/admin/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/admin/.oceanbase-all-in-one/bin
-  ignore_errors: yes
+  register: obd_start
+  failed_when: obd_start.rc != 0
   tags: start
 
 - name: List OceanBase clusters
@@ -256,10 +270,28 @@
     obd cluster list
   become_user: admin
   register: cluster_list
-  ignore_errors: yes
+  failed_when: cluster_list.rc != 0
   tags: list
 
 - name: Display cluster information
   debug:
     var: cluster_list.stdout
   when: cluster_list.stdout is defined
+
+- name: Verify OceanBase cluster is running
+  assert:
+    that:
+      - "'RUNNING' in cluster_list.stdout"
+    fail_msg: "OceanBase cluster {{ oceanbase_cluster_name }} is not RUNNING on {{ inventory_hostname }}"
+    success_msg: "OceanBase cluster {{ oceanbase_cluster_name }} is RUNNING on {{ inventory_hostname }}"
+
+- name: Wait for OceanBase SQL port to be reachable on all observers
+  wait_for:
+    host: "{{ hostvars[item]['ansible_host'] }}"
+    port: "{{ oceanbase_mysql_port }}"
+    timeout: 120
+    state: started
+  delegate_to: localhost
+  become: false
+  loop: "{{ groups['oceanbase'] }}"
+  run_once: true
