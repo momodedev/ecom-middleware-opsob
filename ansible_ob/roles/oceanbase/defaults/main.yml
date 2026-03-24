@@ -12,6 +12,8 @@ oceanbase_rpc_port: 2882
 oceanbase_obshell_port: 2886
 # Supports either an old all-in-one tarball URL or an obdeploy RPM URL.
 oceanbase_all_in_one_url: "https://github.com/oceanbase/obdeploy/releases/download/v4.2.0/ob-deploy-4.2.0-1.el8.x86_64.rpm"
+oceanbase_obd_component: "oceanbase"
+oceanbase_obd_version: "4.3.5.2"
 oceanbase_data_mount_device: "/dev/mapper/vgob-lvob"
 oceanbase_strict_mount_check: true
 oceanbase_skip_data_mount: false
