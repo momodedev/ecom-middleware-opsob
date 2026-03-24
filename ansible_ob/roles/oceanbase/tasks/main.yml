@@ -390,22 +390,19 @@
     oceanbase_cluster_cached_status: "{{ oceanbase_cluster_cached_status_cmd.stdout | trim | lower }}"
   run_once: true
 
-- name: Destroy existing OceanBase cluster non-interactively before redeploy
-  ansible.builtin.expect:
-    command: >-
-      bash -lc 'export PATH="{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin"; {{ oceanbase_obd_cmd_prefix }}obd cluster destroy {{ oceanbase_cluster_name }} -f'
-    responses:
-      'Are you sure to destroy the ".*" cluster \? \[y/n\]:': 'y'
-    timeout: 300
+- name: Redeploy existing OceanBase cluster using OBD
+  shell: |
+    {{ oceanbase_obd_cmd_prefix }}obd cluster redeploy {{ oceanbase_cluster_name }} -c {{ oceanbase_admin_home }}/obcluster.yaml
   delegate_to: "{{ oceanbase_obd_controller_host }}"
   run_once: true
   become_user: "{{ oceanbase_admin_user }}"
+  environment:
+    PATH: "{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin"
   when:
     - oceanbase_obd_recreate_existing_cluster | bool
     - oceanbase_cluster_cached_status | default('') | length > 0
-  register: oceanbase_obd_destroy
-  changed_when: oceanbase_obd_destroy.rc == 0
-  failed_when: oceanbase_obd_destroy.rc != 0
+  register: obd_deploy
+  failed_when: obd_deploy.rc != 0
 
 - name: Deploy OceanBase cluster using OBD
   shell: |
@@ -417,6 +414,7 @@
     PATH: "{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin"
   register: obd_deploy
   failed_when: obd_deploy.rc != 0
+  when: not (oceanbase_obd_recreate_existing_cluster | bool and (oceanbase_cluster_cached_status | default('') | length > 0))
   tags: deploy
 
 - name: Display deployment result
