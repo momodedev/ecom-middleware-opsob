@@ -254,11 +254,22 @@ resource "null_resource" "deploy_oceanbase" {
     command = <<-EOT
       echo "=== Deploying OceanBase Cluster ==="
       
-      INVENTORY_FILE="${local.ansible_inventory_path}"
-      PLAYBOOK_FILE="${path.module}/../../ansible/playbooks/deploy_oceanbase_cluster.yml"
+      # Paths below are relative to ansible/ after cd.
+      INVENTORY_FILE="inventory/oceanbase_hosts_auto"
+      PLAYBOOK_FILE="playbooks/deploy_oceanbase_playbook.yaml"
       REPO_ROOT="${path.module}/../.."
       
       cd "$REPO_ROOT/ansible"
+
+      if [ ! -f "$INVENTORY_FILE" ]; then
+        echo "Error: Inventory file not found at $INVENTORY_FILE"
+        exit 1
+      fi
+
+      if [ ! -f "$PLAYBOOK_FILE" ]; then
+        echo "Error: Playbook not found at $PLAYBOOK_FILE"
+        exit 1
+      fi
       
       # Activate virtual environment if it exists
       if [ -f ~/ansible-venv/bin/activate ]; then
