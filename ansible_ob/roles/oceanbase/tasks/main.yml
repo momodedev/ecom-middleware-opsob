@@ -392,17 +392,21 @@
 
 - name: Set whether existing cluster should use redeploy path
   set_fact:
-    oceanbase_use_redeploy: "{{ (oceanbase_obd_recreate_existing_cluster | bool) and ((oceanbase_cluster_cached_status | default('')) in (oceanbase_obd_redeploy_statuses | default([]))) }}"
+    oceanbase_needs_destroy_before_deploy: "{{ (oceanbase_obd_recreate_existing_cluster | bool) and ((oceanbase_cluster_cached_status | default('')) in (oceanbase_obd_redeploy_statuses | default([]))) }}"
   run_once: true
 
-- name: Sync generated YAML to OBD cached config for existing cluster
+- name: Destroy existing OceanBase cluster before fresh deploy
   shell: |
-    cp -f {{ oceanbase_admin_home }}/obcluster.yaml {{ oceanbase_admin_home }}/.obd/cluster/{{ oceanbase_cluster_name }}/config.yaml
+    {{ oceanbase_obd_cmd_prefix }}obd cluster destroy {{ oceanbase_cluster_name }} --confirm -f
   delegate_to: "{{ oceanbase_obd_controller_host }}"
   run_once: true
   become_user: "{{ oceanbase_admin_user }}"
+  environment:
+    PATH: "{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin"
   when:
-    - oceanbase_use_redeploy | bool
+    - oceanbase_needs_destroy_before_deploy | bool
+  register: oceanbase_obd_destroy
+  failed_when: oceanbase_obd_destroy.rc != 0
 
 - name: Clean OceanBase work directories on all observers before fresh deploy
   shell: |
@@ -415,20 +419,6 @@
   become: true
   when:
     - oceanbase_obd_clean_workdirs_before_fresh_deploy | bool
-    - not (oceanbase_use_redeploy | bool)
-
-- name: Redeploy existing OceanBase cluster using OBD
-  shell: |
-    {{ oceanbase_obd_cmd_prefix }}obd cluster redeploy {{ oceanbase_cluster_name }} --confirm
-  delegate_to: "{{ oceanbase_obd_controller_host }}"
-  run_once: true
-  become_user: "{{ oceanbase_admin_user }}"
-  environment:
-    PATH: "{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin"
-  when:
-    - oceanbase_use_redeploy | bool
-  register: obd_deploy
-  failed_when: obd_deploy.rc != 0
 
 - name: Deploy OceanBase cluster using OBD
   shell: |
@@ -440,7 +430,6 @@
     PATH: "{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin"
   register: obd_deploy
   failed_when: obd_deploy.rc != 0
-  when: not (oceanbase_use_redeploy | bool)
   tags: deploy
 
 - name: Display deployment result
