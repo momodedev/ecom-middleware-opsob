@@ -391,13 +391,15 @@
   run_once: true
 
 - name: Destroy existing OceanBase cluster non-interactively before redeploy
-  shell: |
-    printf 'y\n' | {{ oceanbase_obd_cmd_prefix }}obd cluster destroy {{ oceanbase_cluster_name }} -f
+  ansible.builtin.expect:
+    command: >-
+      bash -lc 'export PATH="{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin"; {{ oceanbase_obd_cmd_prefix }}obd cluster destroy {{ oceanbase_cluster_name }} -f'
+    responses:
+      'Are you sure to destroy the ".*" cluster \? \[y/n\]:': 'y'
+    timeout: 300
   delegate_to: "{{ oceanbase_obd_controller_host }}"
   run_once: true
   become_user: "{{ oceanbase_admin_user }}"
-  environment:
-    PATH: "{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin"
   when:
     - oceanbase_obd_recreate_existing_cluster | bool
     - oceanbase_cluster_cached_status | default('') | length > 0
