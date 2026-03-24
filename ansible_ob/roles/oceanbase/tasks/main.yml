@@ -456,6 +456,7 @@
   run_once: true
   become_user: "{{ oceanbase_admin_user }}"
   register: cluster_list
+  changed_when: false
   failed_when: cluster_list.rc != 0
   tags: list
 
@@ -467,9 +468,10 @@
 - name: Verify OceanBase cluster is running
   assert:
     that:
-      - "'RUNNING' in cluster_list.stdout"
+      - "'running' in (cluster_list.stdout | lower)"
     fail_msg: "OceanBase cluster {{ oceanbase_cluster_name }} is not RUNNING on {{ inventory_hostname }}"
     success_msg: "OceanBase cluster {{ oceanbase_cluster_name }} is RUNNING on {{ inventory_hostname }}"
+  run_once: true
 
 - name: Wait for OceanBase SQL port to be reachable on all observers
   wait_for:
