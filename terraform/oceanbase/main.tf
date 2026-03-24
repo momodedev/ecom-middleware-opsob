@@ -344,10 +344,16 @@ resource "null_resource" "deploy_monitoring" {
     command = <<-EOT
       echo "=== Deploying Monitoring Stack (Grafana + Prometheus) on control node ==="
 
-      PLAYBOOK_FILE="${path.module}/../../ansible/playbooks/deploy_monitoring_playbook.yml"
+      # Path below is relative to ansible/ after cd.
+      PLAYBOOK_FILE="playbooks/deploy_monitoring_playbook.yml"
       REPO_ROOT="${path.module}/../.."
 
       cd "$REPO_ROOT/ansible"
+
+      if [ ! -f "$PLAYBOOK_FILE" ]; then
+        echo "Error: Monitoring playbook not found at $PLAYBOOK_FILE"
+        exit 1
+      fi
 
       # Activate virtual environment if it exists
       if [ -f ~/ansible-venv/bin/activate ]; then
