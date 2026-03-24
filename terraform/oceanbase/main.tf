@@ -113,6 +113,36 @@ resource "azurerm_network_security_rule" "ob_monitoring" {
   network_security_group_name = var.control_nsg_name
 }
 
+# Allow external access to Grafana on control node public IP.
+resource "azurerm_network_security_rule" "ob_grafana_public" {
+  name                        = "ob-grafana-public"
+  priority                    = 250
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "3000"
+  source_address_prefix       = "*"
+  destination_address_prefix  = "*"
+  resource_group_name         = var.control_resource_group_name
+  network_security_group_name = var.control_nsg_name
+}
+
+# Allow external access to Prometheus on control node public IP.
+resource "azurerm_network_security_rule" "ob_prometheus_public" {
+  name                        = "ob-prometheus-public"
+  priority                    = 260
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "9090"
+  source_address_prefix       = "*"
+  destination_address_prefix  = "*"
+  resource_group_name         = var.control_resource_group_name
+  network_security_group_name = var.control_nsg_name
+}
+
 # NAT Gateway - provides outbound internet for observer VMs (which have no public IPs)
 # The control node's own public IP handles its outbound traffic; NAT only affects VMs without one.
 resource "azurerm_public_ip" "oceanbase_nat" {
@@ -343,9 +373,33 @@ resource "null_resource" "deploy_monitoring" {
       # Install Prometheus + Grafana on this control node
       echo "Running monitoring deployment playbook..."
       ansible-playbook -i "$MONITORING_INVENTORY" "$PLAYBOOK_FILE" || {
-        echo "Warning: Monitoring deployment encountered errors"
-        echo "Retry: ansible-playbook -i $MONITORING_INVENTORY $PLAYBOOK_FILE"
+        echo "Error: Monitoring deployment failed"
+        echo "Retry: ansible-playbook -i $MONITORING_INVENTORY $PLAYBOOK_FILE -v"
+        rm -f "$MONITORING_INVENTORY"
+        exit 1
       }
+
+      # Verify local endpoints are actually listening before reporting success.
+      for endpoint in 3000 9090; do
+        timeout=180
+        elapsed=0
+
+        while [ $elapsed -lt $timeout ]; do
+          if curl -fsS "http://127.0.0.1:$endpoint" >/dev/null 2>&1; then
+            echo "✓ Endpoint ready on :$endpoint"
+            break
+          fi
+
+          sleep 5
+          elapsed=$((elapsed + 5))
+        done
+
+        if [ $elapsed -ge $timeout ]; then
+          echo "Error: Endpoint :$endpoint is not reachable on control node"
+          rm -f "$MONITORING_INVENTORY"
+          exit 1
+        fi
+      done
 
       rm -f "$MONITORING_INVENTORY"
       echo "✓ Monitoring deployed on control node: Grafana :3000, Prometheus :9090"
