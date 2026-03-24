@@ -362,15 +362,15 @@ resource "null_resource" "deploy_monitoring" {
 
       # Generate a temporary monitoring inventory:
       #   management_node = this control node (running Terraform, so localhost)
-      #   kafka_broker    = OceanBase observer IPs (Prometheus scrape targets for node_exporter)
+      #   oceanbase_observer = OceanBase observer IPs (Prometheus scrape targets for node_exporter)
       MONITORING_INVENTORY="/tmp/ob_monitoring_inventory_$$.ini"
 
       echo "[management_node]" > "$MONITORING_INVENTORY"
       echo "localhost ansible_connection=local" >> "$MONITORING_INVENTORY"
       echo "" >> "$MONITORING_INVENTORY"
-      echo "[kafka_broker]" >> "$MONITORING_INVENTORY"
+      echo "[oceanbase_observer]" >> "$MONITORING_INVENTORY"
       for ip in ${join(" ", [for vm in azurerm_linux_virtual_machine.oceanbase_observers : vm.private_ip_address])}; do
-        echo "$ip ansible_user=oceanadmin ansible_ssh_private_key_file=${var.ssh_private_key_path}" >> "$MONITORING_INVENTORY"
+        echo "$ip ansible_host=$ip ansible_user=oceanadmin ansible_ssh_private_key_file=${var.ssh_private_key_path}" >> "$MONITORING_INVENTORY"
       done
 
       echo "Monitoring inventory:"

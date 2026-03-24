@@ -35,11 +35,15 @@
 
 - name: Build Kafka brokers bootstrap server list
   ansible.builtin.set_fact:
-    # Normalize host -> host:9092 (tolerates hosts already containing a port)
-    kafka_servers: "{{ groups['kafka_broker']
-      | map('extract', hostvars, 'ansible_host')
-      | map('regex_replace', '^(.*?)(:[0-9]+)?$', '\\1:9092')
-      | join(',') }}"
+    # Use ansible_host when present, otherwise fall back to inventory hostname.
+    # Normalize host -> host:9092 (tolerates hosts already containing a port).
+    kafka_servers: >-
+      {%- set brokers = [] -%}
+      {%- for h in groups['kafka_broker'] -%}
+      {%- set addr = (hostvars[h].ansible_host | default(h)) | regex_replace('^(.*?)(:[0-9]+)?$', '\\1') -%}
+      {%- set _ = brokers.append(addr ~ ':9092') -%}
+      {%- endfor -%}
+      {{ brokers | join(',') }}
   tags: kafka_exporter
 
 - name: Deploy kafka exporter service unit
