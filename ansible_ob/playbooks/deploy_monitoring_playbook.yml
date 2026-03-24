@@ -1,0 +1,64 @@
+---
+# playbook to deploy the monitoring stack for an OceanBase cluster
+#
+# This playbook assumes you have defined two host groups in your Ansible
+# inventory:
+#
+#   - **management_node** – the single control/management node created by
+#     Terraform.  Prometheus and Grafana will run on
+#     this host.  Deploying the monitoring services on the control
+#     node re-uses existing infrastructure (Prometheus on 9090
+#     and Grafana on 3000).
+#
+#   - **oceanbase_observer** – the set of OceanBase observer hosts.
+#     Each observer will run a node exporter so
+#     Prometheus can collect CPU, memory and disk metrics.
+#
+# To use this playbook run:
+#
+#     ansible-playbook -i inventory.ini playbooks/deploy_monitoring_playbook.yml
+#
+# See the README in this directory for more details.
+
+- name: Deploy Prometheus and Grafana to the management node
+  hosts: management_node
+  become: true
+  vars:
+    # Versions of the monitoring components. Adjust as necessary.
+    prometheus_version: "2.50.0"
+    grafana_apt_key_url: "https://packages.grafana.com/gpg.key"
+    node_exporter_version: "1.7.0"
+  roles:
+    - role: ../roles/monitoring/prometheus_grafana
+
+- name: Install node exporter on all OceanBase observers
+  hosts: oceanbase_observer
+  become: true
+  vars:
+    node_exporter_version: "1.7.0"
+  roles:
+    - role: ../roles/common/node_exporter
+
+- name: Generate Prometheus node exporter targets
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  vars:
+    node_targets_path: "/etc/prometheus/file_sd/node_targets.json"
+    node_exporter_port: 9100
+  tasks:
+    - name: Ensure Prometheus file_sd directory exists
+      file:
+        path: "{{ node_targets_path | dirname }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render node exporter targets file
+      template:
+        src: ../templates/prometheus_node_targets.json.j2
+        dest: "{{ node_targets_path }}"
+        mode: "0644"
+      vars:
+        target_ips: "{{ groups['oceanbase_observer'] | map('extract', hostvars, 'ansible_host') | list }}"
+        target_port: "{{ node_exporter_port }}"

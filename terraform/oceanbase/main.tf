@@ -189,7 +189,7 @@ resource "azurerm_nat_gateway_public_ip_association" "oceanbase" {
 
 # Generate Ansible inventory from Terraform state
 locals {
-  ansible_inventory_path = "${path.module}/../../ansible/inventory/oceanbase_hosts_auto"
+  ansible_inventory_path = "${path.module}/../../ansible_ob/inventory/oceanbase_hosts_auto"
   observer_ips_json      = jsonencode([for vm in azurerm_linux_virtual_machine.oceanbase_observers : vm.private_ip_address])
   observer_names         = [for vm in azurerm_linux_virtual_machine.oceanbase_observers : vm.name]
 }
@@ -284,12 +284,12 @@ resource "null_resource" "deploy_oceanbase" {
     command = <<-EOT
       echo "=== Deploying OceanBase Cluster ==="
       
-      # Paths below are relative to ansible/ after cd.
+      # Paths below are relative to ansible_ob/ after cd.
       INVENTORY_FILE="inventory/oceanbase_hosts_auto"
       PLAYBOOK_FILE="playbooks/deploy_oceanbase_playbook.yaml"
       REPO_ROOT="${path.module}/../.."
       
-      cd "$REPO_ROOT/ansible"
+      cd "$REPO_ROOT/ansible_ob"
 
       if [ ! -f "$INVENTORY_FILE" ]; then
         echo "Error: Inventory file not found at $INVENTORY_FILE"
@@ -327,7 +327,6 @@ resource "null_resource" "deploy_oceanbase" {
   }
   
   triggers = {
-    always_run = timestamp()
     ansible_run_id = var.ansible_run_id
   }
 }
@@ -344,11 +343,11 @@ resource "null_resource" "deploy_monitoring" {
     command = <<-EOT
       echo "=== Deploying Monitoring Stack (Grafana + Prometheus) on control node ==="
 
-      # Path below is relative to ansible/ after cd.
+      # Path below is relative to ansible_ob/ after cd.
       PLAYBOOK_FILE="playbooks/deploy_monitoring_playbook.yml"
       REPO_ROOT="${path.module}/../.."
 
-      cd "$REPO_ROOT/ansible"
+      cd "$REPO_ROOT/ansible_ob"
 
       if [ ! -f "$PLAYBOOK_FILE" ]; then
         echo "Error: Monitoring playbook not found at $PLAYBOOK_FILE"
@@ -415,7 +414,6 @@ resource "null_resource" "deploy_monitoring" {
   }
 
   triggers = {
-    always_run     = timestamp()
     ansible_run_id = var.ansible_run_id
   }
 }

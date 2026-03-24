@@ -1,0 +1,9 @@
+[
+  {
+    "targets": [
+    {% for ip in target_ips %}
+      "{{ ip }}:{{ target_port }}"{% if not loop.last %},{% endif %}
+    {% endfor %}
+    ]
+  }
+]

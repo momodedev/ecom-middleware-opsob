@@ -1,0 +1,23 @@
+---
+# Default variables for OceanBase role
+
+oceanbase_cluster_name: "ob_cluster"
+oceanbase_root_password: "OceanBase#!123"
+oceanbase_memory_limit: "8G"
+oceanbase_cpu_count: 8
+oceanbase_data_disk_size_gb: 500
+oceanbase_redo_disk_size_gb: 200
+oceanbase_mysql_port: 2881
+oceanbase_rpc_port: 2882
+oceanbase_obshell_port: 2886
+
+# Deployment paths
+oceanbase_home_dir: /home/admin/oceanbase
+oceanbase_data_dir: /oceanbase/data
+oceanbase_redo_dir: /oceanbase/redo
+oceanbase_server_dir: /oceanbase/server
+
+# System configuration
+oceanbase_admin_user: admin
+oceanbase_admin_group: admin
+oceanbase_ssh_port: 22

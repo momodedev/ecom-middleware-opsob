@@ -1,0 +1,102 @@
+---
+# OceanBase Cluster Deployment Playbook
+# This playbook deploys OceanBase distributed database on Azure VMs
+
+- name: Deploy OceanBase Cluster Infrastructure
+  hosts: all
+  gather_facts: false
+  vars:
+    ansible_connection: local
+  tasks:
+    - name: Wait for SSH to be ready on all observers
+      wait_for:
+        port: 22
+        host: "{{ item }}"
+        delay: 10
+        timeout: 600
+        state: started
+      loop: "{{ observer_private_ips }}"
+      register: ssh_wait
+      retries: 3
+      delay: 30
+      until: ssh_wait is succeeded
+
+    - name: Test SSH connectivity to all observers
+      command: echo "SSH connection test"
+      register: ssh_test
+      changed_when: false
+      retries: 5
+      delay: 10
+      until: ssh_test is succeeded
+      ignore_errors: true
+      delegate_to: "{{ item }}"
+      remote_user: oceanadmin
+      loop: "{{ observer_private_ips }}"
+
+    - name: Verify all VMs are accessible
+      assert:
+        that:
+          - ssh_test is succeeded
+        fail_msg: "Cannot establish SSH connection to one or more observer nodes"
+        success_msg: "SSH connectivity verified to all observer nodes"
+
+- name: Prepare OceanBase Observer Nodes
+  hosts: oceanbase
+  become: true
+  gather_facts: yes
+  roles:
+    - role: ../roles/oceanbase
+
+- name: Configure OceanBase Cluster
+  hosts: oceanbase[0]
+  become: true
+  gather_facts: yes
+  vars:
+    ansible_ssh_common_args: ''
+  tasks:
+    - name: Wait for OceanBase services to start
+      wait_for:
+        timeout: 60
+      delegate_to: localhost
+
+    - name: Verify cluster deployment
+      shell: |
+        source ~/.oceanbase-all-in-one/bin/env.sh
+        obd cluster list
+      become_user: admin
+      environment:
+        PATH: /home/admin/.local/bin:/home/admin/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/admin/.oceanbase-all-in-one/bin
+      register: cluster_status
+      ignore_errors: yes
+
+    - name: Display cluster status
+      debug:
+        var: cluster_status.stdout_lines
+
+- name: Generate Prometheus Service Discovery Targets
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: yes
+  vars:
+    prometheus_sd_output_path: "/etc/prometheus/file_sd/oceanbase_targets.json"
+    prometheus_ob_exporter_port: 9308
+    node_exporter_port: 9100
+  tasks:
+    - name: Ensure Prometheus service discovery directory exists
+      file:
+        path: "{{ prometheus_sd_output_path | dirname }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render OceanBase scrape target file
+      template:
+        src: roles/oceanbase/templates/prometheus_oceanbase_targets.json.j2
+        dest: "{{ prometheus_sd_output_path }}"
+        mode: "0644"
+      ignore_errors: yes
+      when: groups['oceanbase'] is defined
+
+    - name: Display generated targets
+      debug:
+        msg: "OceanBase Prometheus targets generated at {{ prometheus_sd_output_path }}"

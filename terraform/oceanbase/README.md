@@ -224,7 +224,8 @@ terraform apply -var-file='secret.tfvars'
 ./scripts/generate_oceanbase_inventory.sh
 
 # 4. 重新运行 Ansible playbook
-ansible-playbook -i inventory/oceanbase_hosts playbooks/deploy_oceanbase_cluster.yml
+cd ../../ansible_ob
+ansible-playbook -i inventory/oceanbase_hosts playbooks/deploy_oceanbase_playbook.yaml
 ```
 
 #### 缩减节点

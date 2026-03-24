@@ -1,0 +1,59 @@
+---
+- name: Deploy OceanBase Cluster
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Wait for SSH and verify connectivity
+      wait_for:
+        port: 22
+        host: "{{ ansible_host }}"
+        delay: 10
+        timeout: 600
+      vars:
+        ansible_connection: local
+      register: ssh_wait
+      retries: 3
+      delay: 30
+      until: ssh_wait is succeeded
+
+    - name: Test SSH connection with retries
+      command: echo "SSH OK"
+      register: ssh_test
+      changed_when: false
+      retries: 5
+      delay: 10
+      until: ssh_test is succeeded
+      ignore_errors: true
+
+    - name: Fail if SSH is not working
+      fail:
+        msg: "Cannot establish SSH connection to {{ inventory_hostname }} ({{ ansible_host }})"
+      when: ssh_test is failed
+
+- name: Configure OceanBase Observers
+  hosts: oceanbase
+  become: true
+  roles:
+    - role: ../roles/oceanbase
+
+- name: Generate Prometheus targets for OceanBase exporters
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: yes
+  vars:
+    prometheus_sd_output_path: "/etc/prometheus/file_sd/oceanbase_targets.json"
+    prometheus_ob_exporter_port: 9308
+  tasks:
+    - name: Ensure Prometheus target directory exists
+      file:
+        path: "{{ prometheus_sd_output_path | dirname }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render OceanBase scrape target file
+      template:
+        src: ../roles/oceanbase/templates/prometheus_oceanbase_targets.json.j2
+        dest: "{{ prometheus_sd_output_path }}"
+        mode: "0644"
+      ignore_errors: yes

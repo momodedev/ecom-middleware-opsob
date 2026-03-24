@@ -1,0 +1,16 @@
+---
+# Handlers for OceanBase role
+
+- name: reboot required
+  reboot:
+    reboot_timeout: 300
+  ignore_errors: yes
+
+- name: reload sysctl
+  command: sysctl -p
+  ignore_errors: yes
+
+- name: restart sshd
+  systemd:
+    name: sshd
+    state: restarted

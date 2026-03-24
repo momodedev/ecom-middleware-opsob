@@ -115,9 +115,9 @@ tail -f /oceanbase/data/log/observer.log
 
 ### 重新运行 Ansible
 ```bash
-cd ../../ansible
+cd ../../ansible_ob
 source ~/ansible-venv/bin/activate
-ansible-playbook -i inventory/oceanbase_hosts_auto playbooks/deploy_oceanbase_cluster.yml
+ansible-playbook -i inventory/oceanbase_hosts_auto playbooks/deploy_oceanbase_playbook.yaml
 ```
 
 ### 重新部署监控
