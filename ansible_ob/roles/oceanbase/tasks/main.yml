@@ -103,9 +103,9 @@
 
 - name: Create admin user for OceanBase
   user:
-    name: admin
-    group: admin
-    groups: admin
+    name: "{{ oceanbase_admin_user }}"
+    group: "{{ oceanbase_admin_group }}"
+    groups: "{{ oceanbase_admin_group }}"
     shell: /bin/bash
     create_home: yes
     state: present
@@ -113,18 +113,18 @@
 - name: Configure sudo for admin user
   lineinfile:
     path: /etc/sudoers
-    line: 'admin ALL=(ALL) NOPASSWD: ALL'
+    line: '{{ oceanbase_admin_user }} ALL=(ALL) NOPASSWD: ALL'
     validate: 'visudo -cf %s'
 
 - name: Set admin user password
   user:
-    name: admin
+    name: "{{ oceanbase_admin_user }}"
     password: "{{ 'admin' | password_hash('sha512') }}"
     update_password: on_create
 
 - name: Setup SSH key for admin user
   user:
-    name: admin
+    name: "{{ oceanbase_admin_user }}"
     generate_ssh_key: yes
     ssh_key_bits: 2048
     ssh_key_file: .ssh/id_rsa
@@ -145,15 +145,15 @@
   file:
     path: "{{ item }}"
     state: directory
-    owner: admin
-    group: admin
+    owner: "{{ oceanbase_admin_user }}"
+    group: "{{ oceanbase_admin_group }}"
     mode: '0755'
   loop:
     - /oceanbase
     - /oceanbase/server
     - /oceanbase/data
     - /oceanbase/redo
-    - /home/admin/oceanbase
+    - "{{ oceanbase_home_dir }}"
 
 - name: Mount data disk for OceanBase (if available)
   mount:
@@ -173,30 +173,30 @@
   get_url:
     url: "{{ oceanbase_all_in_one_url }}"
     dest: "{{ '/tmp/oceanbase-obdeploy.rpm' if oceanbase_installer_type == 'rpm' else '/tmp/oceanbase-all-in-one.tar.gz' }}"
-    owner: admin
-    group: admin
+    owner: "{{ oceanbase_admin_user }}"
+    group: "{{ oceanbase_admin_group }}"
     mode: '0644'
-  become_user: "{{ 'root' if oceanbase_installer_type == 'rpm' else 'admin' }}"
+  become_user: "{{ 'root' if oceanbase_installer_type == 'rpm' else oceanbase_admin_user }}"
   tags: download
 
 - name: Extract OceanBase package
   unarchive:
     src: /tmp/oceanbase-all-in-one.tar.gz
-    dest: /home/admin/
-    owner: admin
-    group: admin
+    dest: "{{ oceanbase_admin_home }}/"
+    owner: "{{ oceanbase_admin_user }}"
+    group: "{{ oceanbase_admin_group }}"
     remote_src: yes
-  become_user: admin
+  become_user: "{{ oceanbase_admin_user }}"
   when: oceanbase_installer_type == 'tar'
   tags: extract
 
 - name: Install OceanBase using all-in-one install script
   shell: |
-    cd /home/admin/oceanbase-all-in-one/bin
+    cd {{ oceanbase_admin_home }}/oceanbase-all-in-one/bin
     ./install.sh
-  become_user: admin
+  become_user: "{{ oceanbase_admin_user }}"
   environment:
-    PATH: /home/admin/.local/bin:/home/admin/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin
+    PATH: "{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin"
   when: oceanbase_installer_type == 'tar'
   tags: install
 
@@ -214,13 +214,13 @@
 
 - name: Verify OceanBase environment script exists for tar installer
   stat:
-    path: /home/admin/.oceanbase-all-in-one/bin/env.sh
+    path: "{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin/env.sh"
   register: oceanbase_env_script
   when: oceanbase_installer_type == 'tar'
 
 - name: Fail when OceanBase tar install did not provide env.sh
   fail:
-    msg: "OceanBase install is incomplete on {{ inventory_hostname }}. Missing /home/admin/.oceanbase-all-in-one/bin/env.sh"
+    msg: "OceanBase install is incomplete on {{ inventory_hostname }}. Missing {{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin/env.sh"
   when:
     - oceanbase_installer_type == 'tar'
     - not oceanbase_env_script.stat.exists
@@ -234,11 +234,18 @@
 
 - name: Source OceanBase environment
   lineinfile:
-    path: /home/admin/.bashrc
+    path: "{{ oceanbase_admin_home }}/.bashrc"
+    regexp: '^source ~/.oceanbase-all-in-one/bin/env.sh$'
+    state: absent
+  become_user: "{{ oceanbase_admin_user }}"
+
+- name: Source OceanBase environment
+  lineinfile:
+    path: "{{ oceanbase_admin_home }}/.bashrc"
     regexp: '(^source ~/.oceanbase-all-in-one/bin/env.sh$)|(^\[ -f ~/.oceanbase-all-in-one/bin/env.sh \] && source ~/.oceanbase-all-in-one/bin/env.sh$)'
     line: '[ -f ~/.oceanbase-all-in-one/bin/env.sh ] && source ~/.oceanbase-all-in-one/bin/env.sh'
     create: yes
-  become_user: admin
+  become_user: "{{ oceanbase_admin_user }}"
   when: oceanbase_installer_type == 'tar'
 
 - name: Set OBD command wrapper
@@ -299,7 +306,7 @@
 - name: Disable remote OBD mirrors to prioritize local packages
   shell: |
     obd mirror disable remote || true
-  become_user: admin
+  become_user: "{{ oceanbase_admin_user }}"
   when:
     - oceanbase_installer_type == 'rpm'
     - oceanbase_seed_local_mirror_from_github | bool
@@ -307,7 +314,7 @@
 - name: Clone downloaded OceanBase RPMs into local OBD mirror
   shell: |
     obd mirror clone /tmp/{{ item.url | basename }} -f
-  become_user: admin
+  become_user: "{{ oceanbase_admin_user }}"
   loop: "{{ oceanbase_component_rpms }}"
   when:
     - oceanbase_installer_type == 'rpm'
@@ -317,7 +324,7 @@
 - name: Show local OBD mirror packages
   shell: |
     obd mirror list local
-  become_user: admin
+  become_user: "{{ oceanbase_admin_user }}"
   register: oceanbase_local_mirror_list
   changed_when: false
   when:
@@ -343,7 +350,7 @@
 
 - name: Read OBD controller admin public key
   slurp:
-    src: /home/admin/.ssh/id_rsa.pub
+    src: "{{ oceanbase_admin_home }}/.ssh/id_rsa.pub"
   delegate_to: "{{ oceanbase_obd_controller_host }}"
   run_once: true
   register: oceanbase_controller_pubkey
@@ -351,7 +358,7 @@
 
 - name: Authorize OBD controller key on all observer nodes
   authorized_key:
-    user: admin
+    user: "{{ oceanbase_admin_user }}"
     state: present
     key: "{{ oceanbase_controller_pubkey.content | b64decode | trim }}"
   tags: ssh_trust
@@ -359,21 +366,21 @@
 - name: Generate cluster deployment YAML
   template:
     src: obcluster.yaml.j2
-    dest: /home/admin/obcluster.yaml
-    owner: admin
-    group: admin
+    dest: "{{ oceanbase_admin_home }}/obcluster.yaml"
+    owner: "{{ oceanbase_admin_user }}"
+    group: "{{ oceanbase_admin_group }}"
     mode: '0644'
-  become_user: admin
+  become_user: "{{ oceanbase_admin_user }}"
   tags: config
 
 - name: Deploy OceanBase cluster using OBD
   shell: |
-    {{ oceanbase_obd_cmd_prefix }}obd cluster deploy {{ oceanbase_cluster_name }} -c /home/admin/obcluster.yaml
+    {{ oceanbase_obd_cmd_prefix }}obd cluster deploy {{ oceanbase_cluster_name }} -c {{ oceanbase_admin_home }}/obcluster.yaml
   delegate_to: "{{ oceanbase_obd_controller_host }}"
   run_once: true
-  become_user: admin
+  become_user: "{{ oceanbase_admin_user }}"
   environment:
-    PATH: /home/admin/.local/bin:/home/admin/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/admin/.oceanbase-all-in-one/bin
+    PATH: "{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin"
   register: obd_deploy
   failed_when: obd_deploy.rc != 0
   tags: deploy
@@ -388,9 +395,9 @@
     {{ oceanbase_obd_cmd_prefix }}obd cluster start {{ oceanbase_cluster_name }}
   delegate_to: "{{ oceanbase_obd_controller_host }}"
   run_once: true
-  become_user: admin
+  become_user: "{{ oceanbase_admin_user }}"
   environment:
-    PATH: /home/admin/.local/bin:/home/admin/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/admin/.oceanbase-all-in-one/bin
+    PATH: "{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin"
   register: obd_start
   failed_when: obd_start.rc != 0
   tags: start
@@ -400,7 +407,7 @@
     {{ oceanbase_obd_cmd_prefix }}obd cluster list
   delegate_to: "{{ oceanbase_obd_controller_host }}"
   run_once: true
-  become_user: admin
+  become_user: "{{ oceanbase_admin_user }}"
   register: cluster_list
   failed_when: cluster_list.rc != 0
   tags: list

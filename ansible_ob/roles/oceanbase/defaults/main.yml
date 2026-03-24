@@ -23,12 +23,13 @@ oceanbase_strict_mount_check: true
 oceanbase_skip_data_mount: false
 
 # Deployment paths
-oceanbase_home_dir: /home/admin/oceanbase
+oceanbase_admin_user: oceanadmin
+oceanbase_admin_group: oceanadmin
+oceanbase_admin_home: /home/oceanadmin
+oceanbase_home_dir: /home/oceanadmin/oceanbase
 oceanbase_data_dir: /oceanbase/data
 oceanbase_redo_dir: /oceanbase/redo
 oceanbase_server_dir: /oceanbase/server
 
 # System configuration
-oceanbase_admin_user: admin
-oceanbase_admin_group: admin
 oceanbase_ssh_port: 22
