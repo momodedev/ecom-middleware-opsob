@@ -165,14 +165,18 @@
   ignore_errors: "{{ not (oceanbase_strict_mount_check | bool) }}"
   when: not (oceanbase_skip_data_mount | bool)
 
-- name: Download OceanBase all-in-one package
+- name: Detect OceanBase installer package type
+  set_fact:
+    oceanbase_installer_type: "{{ 'rpm' if (oceanbase_all_in_one_url | lower).endswith('.rpm') else 'tar' }}"
+
+- name: Download OceanBase installer package
   get_url:
     url: "{{ oceanbase_all_in_one_url }}"
-    dest: /tmp/oceanbase-all-in-one.tar.gz
+    dest: "{{ '/tmp/oceanbase-obdeploy.rpm' if oceanbase_installer_type == 'rpm' else '/tmp/oceanbase-all-in-one.tar.gz' }}"
     owner: admin
     group: admin
     mode: '0644'
-  become_user: admin
+  become_user: "{{ 'root' if oceanbase_installer_type == 'rpm' else 'admin' }}"
   tags: download
 
 - name: Extract OceanBase package
@@ -183,26 +187,50 @@
     group: admin
     remote_src: yes
   become_user: admin
+  when: oceanbase_installer_type == 'tar'
   tags: extract
 
-- name: Install OceanBase using install script
+- name: Install OceanBase using all-in-one install script
   shell: |
     cd /home/admin/oceanbase-all-in-one/bin
     ./install.sh
   become_user: admin
   environment:
     PATH: /home/admin/.local/bin:/home/admin/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin
+  when: oceanbase_installer_type == 'tar'
   tags: install
 
-- name: Verify OceanBase environment script exists
+- name: Install obdeploy package for OBD
+  shell: |
+    if command -v dnf >/dev/null 2>&1; then
+      dnf -y install /tmp/oceanbase-obdeploy.rpm
+    else
+      yum -y localinstall /tmp/oceanbase-obdeploy.rpm
+    fi
+  args:
+    executable: /bin/bash
+  when: oceanbase_installer_type == 'rpm'
+  tags: install
+
+- name: Verify OceanBase environment script exists for tar installer
   stat:
     path: /home/admin/.oceanbase-all-in-one/bin/env.sh
   register: oceanbase_env_script
+  when: oceanbase_installer_type == 'tar'
 
-- name: Fail when OceanBase install did not provide env.sh
+- name: Fail when OceanBase tar install did not provide env.sh
   fail:
     msg: "OceanBase install is incomplete on {{ inventory_hostname }}. Missing /home/admin/.oceanbase-all-in-one/bin/env.sh"
-  when: not oceanbase_env_script.stat.exists
+  when:
+    - oceanbase_installer_type == 'tar'
+    - not oceanbase_env_script.stat.exists
+
+- name: Verify OBD command is available for RPM installer
+  command: bash -lc 'command -v obd'
+  register: obd_binary_check
+  changed_when: false
+  failed_when: obd_binary_check.rc != 0
+  when: oceanbase_installer_type == 'rpm'
 
 - name: Source OceanBase environment
   lineinfile:
@@ -211,6 +239,11 @@
     line: '[ -f ~/.oceanbase-all-in-one/bin/env.sh ] && source ~/.oceanbase-all-in-one/bin/env.sh'
     create: yes
   become_user: admin
+  when: oceanbase_installer_type == 'tar'
+
+- name: Set OBD command wrapper
+  set_fact:
+    oceanbase_obd_cmd_prefix: "{{ 'source ~/.oceanbase-all-in-one/bin/env.sh && ' if oceanbase_installer_type == 'tar' else '' }}"
 
 - name: Update /etc/hosts with all observer nodes
   blockinfile:
@@ -242,8 +275,7 @@
 
 - name: Deploy OceanBase cluster using OBD
   shell: |
-    source ~/.oceanbase-all-in-one/bin/env.sh
-    obd cluster deploy {{ oceanbase_cluster_name }} -c /home/admin/obcluster.yaml
+    {{ oceanbase_obd_cmd_prefix }}obd cluster deploy {{ oceanbase_cluster_name }} -c /home/admin/obcluster.yaml
   become_user: admin
   environment:
     PATH: /home/admin/.local/bin:/home/admin/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/admin/.oceanbase-all-in-one/bin
@@ -258,8 +290,7 @@
 
 - name: Start OceanBase cluster
   shell: |
-    source ~/.oceanbase-all-in-one/bin/env.sh
-    obd cluster start {{ oceanbase_cluster_name }}
+    {{ oceanbase_obd_cmd_prefix }}obd cluster start {{ oceanbase_cluster_name }}
   become_user: admin
   environment:
     PATH: /home/admin/.local/bin:/home/admin/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/admin/.oceanbase-all-in-one/bin
@@ -269,8 +300,7 @@
 
 - name: List OceanBase clusters
   shell: |
-    source ~/.oceanbase-all-in-one/bin/env.sh
-    obd cluster list
+    {{ oceanbase_obd_cmd_prefix }}obd cluster list
   become_user: admin
   register: cluster_list
   failed_when: cluster_list.rc != 0
