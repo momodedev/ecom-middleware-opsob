@@ -68,6 +68,15 @@
         timeout: 10
         state: started
 
+    - name: Resolve effective MySQL password from CLI or environment
+      set_fact:
+        mysql_password_effective: "{{ lookup('env', 'OCEANBASE_BENCH_PASSWORD') if mysql_password == '-' else mysql_password }}"
+
+    - name: Fail when MySQL password is missing
+      fail:
+        msg: "MySQL password is empty. Pass it explicitly or set OCEANBASE_BENCH_PASSWORD in environment."
+      when: mysql_password_effective | length == 0
+
     - name: Prepare sysbench data set
       shell: |
         set -euo pipefail
@@ -76,7 +85,7 @@
           --mysql-host={{ mysql_host | quote }} \
           --mysql-port={{ mysql_port }} \
           --mysql-user={{ mysql_user | quote }} \
-          --mysql-password={{ mysql_password | quote }} \
+          --mysql-password={{ mysql_password_effective | quote }} \
           --mysql-db={{ mysql_db | quote }} \
           --tables={{ benchmark_tables }} \
           --table-size={{ benchmark_table_size }} \
@@ -92,7 +101,7 @@
           --mysql-host={{ mysql_host | quote }} \
           --mysql-port={{ mysql_port }} \
           --mysql-user={{ mysql_user | quote }} \
-          --mysql-password={{ mysql_password | quote }} \
+          --mysql-password={{ mysql_password_effective | quote }} \
           --mysql-db={{ mysql_db | quote }} \
           --tables={{ benchmark_tables }} \
           --table-size={{ benchmark_table_size }} \
@@ -127,7 +136,7 @@
           --mysql-host={{ mysql_host | quote }} \
           --mysql-port={{ mysql_port }} \
           --mysql-user={{ mysql_user | quote }} \
-          --mysql-password={{ mysql_password | quote }} \
+          --mysql-password={{ mysql_password_effective | quote }} \
           --mysql-db={{ mysql_db | quote }} \
           --tables={{ benchmark_tables }} \
           --table-size={{ benchmark_table_size }} \

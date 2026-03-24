@@ -162,6 +162,8 @@
     fstype: xfs
     opts: defaults
     state: mounted
+  ignore_errors: "{{ not (oceanbase_strict_mount_check | bool) }}"
+  when: not (oceanbase_skip_data_mount | bool)
 
 - name: Download OceanBase all-in-one package
   get_url:
