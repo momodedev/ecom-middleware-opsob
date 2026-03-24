@@ -245,6 +245,11 @@
   set_fact:
     oceanbase_obd_cmd_prefix: "{{ 'source ~/.oceanbase-all-in-one/bin/env.sh && ' if oceanbase_installer_type == 'tar' else '' }}"
 
+- name: Set OBD controller host
+  set_fact:
+    oceanbase_obd_controller_host: "{{ groups['oceanbase'][0] }}"
+  run_once: true
+
 - name: Query latest OceanBase release metadata
   uri:
     url: https://api.github.com/repos/oceanbase/oceanbase/releases/latest
@@ -336,13 +341,19 @@
       {% endfor %}
     marker: "# {mark} ANSIBLE MANAGED BLOCK - OceanBase hosts"
 
-- name: Configure SSH trust between observer nodes
-  shell: |
-    su - admin -c "ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa -q"
-    {% for host in groups['oceanbase'] %}
-    su - admin -c "ssh-copy-id -i ~/.ssh/id_rsa.pub admin@{{ hostvars[host]['private_ip'] | default(hostvars[host]['ansible_host']) }}" 2>/dev/null || true
-    {% endfor %}
-  become_user: admin
+- name: Read OBD controller admin public key
+  slurp:
+    src: /home/admin/.ssh/id_rsa.pub
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  register: oceanbase_controller_pubkey
+  tags: ssh_trust
+
+- name: Authorize OBD controller key on all observer nodes
+  authorized_key:
+    user: admin
+    state: present
+    key: "{{ oceanbase_controller_pubkey.content | b64decode | trim }}"
   tags: ssh_trust
 
 - name: Generate cluster deployment YAML
@@ -358,6 +369,8 @@
 - name: Deploy OceanBase cluster using OBD
   shell: |
     {{ oceanbase_obd_cmd_prefix }}obd cluster deploy {{ oceanbase_cluster_name }} -c /home/admin/obcluster.yaml
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
   become_user: admin
   environment:
     PATH: /home/admin/.local/bin:/home/admin/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/admin/.oceanbase-all-in-one/bin
@@ -373,6 +386,8 @@
 - name: Start OceanBase cluster
   shell: |
     {{ oceanbase_obd_cmd_prefix }}obd cluster start {{ oceanbase_cluster_name }}
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
   become_user: admin
   environment:
     PATH: /home/admin/.local/bin:/home/admin/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/admin/.oceanbase-all-in-one/bin
@@ -383,6 +398,8 @@
 - name: List OceanBase clusters
   shell: |
     {{ oceanbase_obd_cmd_prefix }}obd cluster list
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
   become_user: admin
   register: cluster_list
   failed_when: cluster_list.rc != 0
