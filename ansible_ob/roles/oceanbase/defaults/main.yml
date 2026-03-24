@@ -27,6 +27,13 @@ oceanbase_obd_version: ""
 oceanbase_obd_force_deploy: true
 # Recreate existing cluster state before deployment so reruns are deterministic.
 oceanbase_obd_recreate_existing_cluster: true
+# Only these cached statuses should use `obd cluster redeploy`.
+oceanbase_obd_redeploy_statuses:
+  - deployed
+  - running
+  - stopped
+# Clean OceanBase work directories before fresh deploy (for destroyed/absent cluster state).
+oceanbase_obd_clean_workdirs_before_fresh_deploy: true
 oceanbase_seed_local_mirror_from_github: true
 oceanbase_target_os_tag: "el8"
 oceanbase_target_arch: "x86_64"
