@@ -207,7 +207,8 @@
 - name: Source OceanBase environment
   lineinfile:
     path: /home/admin/.bashrc
-    line: 'source ~/.oceanbase-all-in-one/bin/env.sh'
+    regexp: '(^source ~/.oceanbase-all-in-one/bin/env.sh$)|(^\[ -f ~/.oceanbase-all-in-one/bin/env.sh \] && source ~/.oceanbase-all-in-one/bin/env.sh$)'
+    line: '[ -f ~/.oceanbase-all-in-one/bin/env.sh ] && source ~/.oceanbase-all-in-one/bin/env.sh'
     create: yes
   become_user: admin
 
