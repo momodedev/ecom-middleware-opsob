@@ -375,7 +375,7 @@
 
 - name: Deploy OceanBase cluster using OBD
   shell: |
-    {{ oceanbase_obd_cmd_prefix }}obd cluster deploy {{ oceanbase_cluster_name }} -c {{ oceanbase_admin_home }}/obcluster.yaml
+    {{ oceanbase_obd_cmd_prefix }}obd cluster deploy {{ '-f ' if (oceanbase_obd_force_deploy | bool) else '' }}{{ oceanbase_cluster_name }} -c {{ oceanbase_admin_home }}/obcluster.yaml
   delegate_to: "{{ oceanbase_obd_controller_host }}"
   run_once: true
   become_user: "{{ oceanbase_admin_user }}"

@@ -15,6 +15,8 @@ oceanbase_all_in_one_url: "https://github.com/oceanbase/obdeploy/releases/downlo
 oceanbase_obd_component: "oceanbase-ce"
 # Leave empty to let OBD resolve the latest available package version from enabled mirrors.
 oceanbase_obd_version: ""
+# Use force deploy so reruns can recover from pre-created /oceanbase/server content.
+oceanbase_obd_force_deploy: true
 oceanbase_seed_local_mirror_from_github: true
 oceanbase_target_os_tag: "el8"
 oceanbase_target_arch: "x86_64"
