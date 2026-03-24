@@ -77,6 +77,29 @@
         msg: "MySQL password is empty. Pass it explicitly or set OCEANBASE_BENCH_PASSWORD in environment."
       when: mysql_password_effective | length == 0
 
+    - name: Ensure benchmark database exists
+      shell: |
+        set -euo pipefail
+        if command -v obclient >/dev/null 2>&1; then
+          obclient \
+            -h {{ mysql_host | quote }} \
+            -P {{ mysql_port }} \
+            -u {{ mysql_user | quote }} \
+            -p{{ mysql_password_effective | quote }} \
+            -A \
+            -e "CREATE DATABASE IF NOT EXISTS {{ mysql_db }};"
+        elif command -v mysql >/dev/null 2>&1; then
+          mysql \
+            -h {{ mysql_host | quote }} \
+            -P {{ mysql_port }} \
+            -u {{ mysql_user | quote }} \
+            -p{{ mysql_password_effective | quote }} \
+            -e "CREATE DATABASE IF NOT EXISTS {{ mysql_db }};"
+        else
+          echo "Neither obclient nor mysql client is available on benchmark host" >&2
+          exit 1
+        fi
+
     - name: Prepare sysbench data set
       shell: |
         set -euo pipefail
