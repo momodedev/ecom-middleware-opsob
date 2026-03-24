@@ -28,9 +28,24 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ANSIBLE_ROOT="$(dirname "$SCRIPT_DIR")"
 
+if [[ "$INVENTORY_FILE" = /* ]]; then
+  INVENTORY_PATH="$INVENTORY_FILE"
+else
+  INVENTORY_PATH="$ANSIBLE_ROOT/$INVENTORY_FILE"
+fi
+
+if [ ! -f "$INVENTORY_PATH" ]; then
+  echo "Error: inventory file not found: $INVENTORY_PATH"
+  echo "Hint: use path relative to ansible_ob, e.g. inventory/oceanbase_hosts_auto"
+  exit 1
+fi
+
 cd "$ANSIBLE_ROOT"
 
-ansible-playbook -i "$INVENTORY_FILE" playbooks/benchmark_oceanbase_sysbench.yml \
+echo "Using inventory: $INVENTORY_PATH"
+echo "Using ansible root: $ANSIBLE_ROOT"
+
+ansible-playbook -i "$INVENTORY_PATH" playbooks/benchmark_oceanbase_sysbench.yml \
   -e "benchmark_label=$CLUSTER_LABEL" \
   -e "mysql_host=$MYSQL_HOST" \
   -e "mysql_user=$MYSQL_USER" \
