@@ -36,6 +36,7 @@
     benchmark_cleanup_data: false
     benchmark_cleanup_before_prepare: true
     benchmark_recreate_db_before_prepare: true
+    benchmark_force_reprepare: false
     benchmark_prepare_retries: 3
     benchmark_prepare_retry_delay: 5
     benchmark_fail_on_case_error: false
@@ -95,6 +96,32 @@
         msg: "MySQL password is empty. Pass it explicitly or set OCEANBASE_BENCH_PASSWORD in environment."
       when: mysql_password_effective | length == 0
 
+    - name: Check whether benchmark database exists
+      shell: |
+        set -euo pipefail
+        if command -v obclient >/dev/null 2>&1; then
+          obclient \
+            -h {{ mysql_host | quote }} \
+            -P {{ mysql_port }} \
+            -u {{ mysql_user | quote }} \
+            -p{{ mysql_password_effective | quote }} \
+            -A -N \
+            -e "SHOW DATABASES LIKE '{{ mysql_db }}';"
+        else
+          mysql \
+            -h {{ mysql_host | quote }} \
+            -P {{ mysql_port }} \
+            -u {{ mysql_user | quote }} \
+            -p{{ mysql_password_effective | quote }} \
+            -N -e "SHOW DATABASES LIKE '{{ mysql_db }}';"
+        fi
+      register: benchmark_db_exists_query
+      changed_when: false
+
+    - name: Set benchmark database existence fact
+      set_fact:
+        benchmark_db_exists: "{{ (benchmark_db_exists_query.stdout | trim) == mysql_db }}"
+
     - name: Ensure benchmark database exists
       shell: |
         set -euo pipefail
@@ -117,6 +144,34 @@
           echo "Neither obclient nor mysql client is available on benchmark host" >&2
           exit 1
         fi
+      when: not benchmark_db_exists | bool
+
+    - name: Check whether benchmark tables already exist
+      shell: |
+        set -euo pipefail
+        if command -v obclient >/dev/null 2>&1; then
+          obclient \
+            -h {{ mysql_host | quote }} \
+            -P {{ mysql_port }} \
+            -u {{ mysql_user | quote }} \
+            -p{{ mysql_password_effective | quote }} \
+            -A -N \
+            -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{{ mysql_db }}' AND table_name='sbtest1';"
+        else
+          mysql \
+            -h {{ mysql_host | quote }} \
+            -P {{ mysql_port }} \
+            -u {{ mysql_user | quote }} \
+            -p{{ mysql_password_effective | quote }} \
+            -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{{ mysql_db }}' AND table_name='sbtest1';"
+        fi
+      register: benchmark_table_exists_query
+      changed_when: false
+      when: benchmark_db_exists | bool
+
+    - name: Set benchmark dataset prepared fact
+      set_fact:
+        benchmark_dataset_prepared: "{{ (benchmark_table_exists_query.stdout | trim | int) > 0 if (benchmark_table_exists_query is defined and benchmark_table_exists_query.stdout is defined and benchmark_table_exists_query.stdout | trim != '') else false }}"
 
     - name: Cleanup existing sysbench data set before prepare
       shell: |
@@ -138,6 +193,7 @@
         - benchmark_prepare_data | bool
         - benchmark_cleanup_before_prepare | bool
         - not benchmark_recreate_db_before_prepare | bool
+        - benchmark_force_reprepare | bool
 
     - name: Recreate benchmark database before prepare
       shell: |
@@ -165,6 +221,7 @@
       when:
         - benchmark_prepare_data | bool
         - benchmark_recreate_db_before_prepare | bool
+        - benchmark_force_reprepare | bool
 
     - name: Prepare sysbench data set
       shell: |
@@ -179,11 +236,19 @@
           --tables={{ benchmark_tables }} \
           --table-size={{ benchmark_table_size }} \
           prepare
-          register: benchmark_prepare_result
-          retries: "{{ benchmark_prepare_retries }}"
-          delay: "{{ benchmark_prepare_retry_delay }}"
-          until: benchmark_prepare_result.rc == 0
-      when: benchmark_prepare_data | bool
+      register: benchmark_prepare_result
+      retries: "{{ benchmark_prepare_retries }}"
+      delay: "{{ benchmark_prepare_retry_delay }}"
+      until: benchmark_prepare_result.rc == 0
+      when: benchmark_prepare_data | bool and ((benchmark_force_reprepare | bool) or not (benchmark_dataset_prepared | default(false) | bool))
+
+    - name: Announce reuse of existing benchmark dataset
+      debug:
+        msg: "Reusing existing sysbench dataset in database {{ mysql_db }} (sbtest1 exists); skipping prepare phase."
+      when:
+        - benchmark_prepare_data | bool
+        - not benchmark_force_reprepare | bool
+        - benchmark_dataset_prepared | default(false) | bool
 
     - name: Run benchmark matrix and collect CSV
       shell: |
