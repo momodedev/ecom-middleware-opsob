@@ -34,6 +34,7 @@
 
     benchmark_prepare_data: true
     benchmark_cleanup_data: false
+    benchmark_cleanup_before_prepare: true
     benchmark_fail_on_case_error: false
 
   tasks:
@@ -113,6 +114,26 @@
           echo "Neither obclient nor mysql client is available on benchmark host" >&2
           exit 1
         fi
+
+    - name: Cleanup existing sysbench data set before prepare
+      shell: |
+        set -euo pipefail
+        sysbench /usr/share/sysbench/oltp_common.lua \
+          --db-driver=mysql \
+          --mysql-host={{ mysql_host | quote }} \
+          --mysql-port={{ mysql_port }} \
+          --mysql-user={{ mysql_user | quote }} \
+          --mysql-password={{ mysql_password_effective | quote }} \
+          --mysql-db={{ mysql_db | quote }} \
+          --tables={{ benchmark_tables }} \
+          --table-size={{ benchmark_table_size }} \
+          cleanup
+      register: benchmark_pre_cleanup
+      failed_when: false
+      changed_when: benchmark_pre_cleanup.rc == 0
+      when:
+        - benchmark_prepare_data | bool
+        - benchmark_cleanup_before_prepare | bool
 
     - name: Prepare sysbench data set
       shell: |
