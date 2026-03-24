@@ -55,6 +55,19 @@
         state: present
       when: ansible_facts['os_family'] == 'RedHat'
 
+    - name: Install MySQL client on Debian family
+      apt:
+        name: default-mysql-client
+        state: present
+        update_cache: true
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Install MySQL client on RedHat family
+      dnf:
+        name: mariadb
+        state: present
+      when: ansible_facts['os_family'] == 'RedHat'
+
     - name: Initialize CSV header
       copy:
         dest: "{{ benchmark_output_csv }}"
