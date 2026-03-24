@@ -80,12 +80,42 @@
         mode: "0644"
         content: "timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors,exit_code,status\n"
 
-    - name: Preflight check for OceanBase MySQL endpoint reachability
+    - name: Set benchmark OBD controller host
+      set_fact:
+        benchmark_obd_controller_host: "{{ groups['oceanbase'][0] }}"
+      when: groups['oceanbase'] is defined and (groups['oceanbase'] | length) > 0
+
+    - name: Initial preflight check for OceanBase MySQL endpoint reachability
       wait_for:
         host: "{{ mysql_host }}"
         port: "{{ mysql_port }}"
         timeout: 10
         state: started
+      register: benchmark_preflight_initial
+      failed_when: false
+
+    - name: Start OceanBase cluster when endpoint is unreachable
+      shell: |
+        set -euo pipefail
+        sudo -u oceanadmin obd cluster start ob_cluster
+      delegate_to: "{{ benchmark_obd_controller_host }}"
+      register: benchmark_cluster_start_result
+      when:
+        - benchmark_preflight_initial is defined
+        - benchmark_preflight_initial.failed | default(false)
+        - benchmark_obd_controller_host is defined
+
+    - name: Final preflight check for OceanBase MySQL endpoint reachability
+      wait_for:
+        host: "{{ mysql_host }}"
+        port: "{{ mysql_port }}"
+        timeout: 120
+        state: started
+
+    - name: Display cluster start output
+      debug:
+        var: benchmark_cluster_start_result.stdout
+      when: benchmark_cluster_start_result is defined
 
     - name: Resolve effective MySQL password from CLI or environment
       set_fact:
