@@ -373,6 +373,38 @@
   become_user: "{{ oceanbase_admin_user }}"
   tags: config
 
+- name: Check existing OceanBase cluster cached status
+  shell: |
+    {{ oceanbase_obd_cmd_prefix }}obd cluster list | awk -F'|' '/\|[[:space:]]*{{ oceanbase_cluster_name }}[[:space:]]*\|/ {gsub(/[[:space:]]/, "", $4); print tolower($4)}'
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become_user: "{{ oceanbase_admin_user }}"
+  environment:
+    PATH: "{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin"
+  register: oceanbase_cluster_cached_status_cmd
+  changed_when: false
+  failed_when: false
+
+- name: Set existing OceanBase cluster cached status fact
+  set_fact:
+    oceanbase_cluster_cached_status: "{{ oceanbase_cluster_cached_status_cmd.stdout | trim | lower }}"
+  run_once: true
+
+- name: Destroy existing OceanBase cluster non-interactively before redeploy
+  shell: |
+    printf 'y\n' | {{ oceanbase_obd_cmd_prefix }}obd cluster destroy {{ oceanbase_cluster_name }} -f
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become_user: "{{ oceanbase_admin_user }}"
+  environment:
+    PATH: "{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin"
+  when:
+    - oceanbase_obd_recreate_existing_cluster | bool
+    - oceanbase_cluster_cached_status | default('') | length > 0
+  register: oceanbase_obd_destroy
+  changed_when: oceanbase_obd_destroy.rc == 0
+  failed_when: oceanbase_obd_destroy.rc != 0
+
 - name: Deploy OceanBase cluster using OBD
   shell: |
     {{ oceanbase_obd_cmd_prefix }}obd cluster deploy {{ '-f ' if (oceanbase_obd_force_deploy | bool) else '' }}{{ oceanbase_cluster_name }} -c {{ oceanbase_admin_home }}/obcluster.yaml

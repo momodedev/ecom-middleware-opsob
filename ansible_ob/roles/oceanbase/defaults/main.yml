@@ -25,6 +25,8 @@ oceanbase_obd_component: "oceanbase-ce"
 oceanbase_obd_version: ""
 # Use force deploy so reruns can recover from pre-created /oceanbase/server content.
 oceanbase_obd_force_deploy: true
+# Recreate existing cluster state before deployment so reruns are deterministic.
+oceanbase_obd_recreate_existing_cluster: true
 oceanbase_seed_local_mirror_from_github: true
 oceanbase_target_os_tag: "el8"
 oceanbase_target_arch: "x86_64"
