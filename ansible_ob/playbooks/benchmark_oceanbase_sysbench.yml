@@ -61,6 +61,13 @@
         mode: "0644"
         content: "timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors\n"
 
+    - name: Preflight check for OceanBase MySQL endpoint reachability
+      wait_for:
+        host: "{{ mysql_host }}"
+        port: "{{ mysql_port }}"
+        timeout: 10
+        state: started
+
     - name: Prepare sysbench data set
       shell: |
         set -euo pipefail

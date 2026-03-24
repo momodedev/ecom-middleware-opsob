@@ -2,17 +2,28 @@
 set -euo pipefail
 
 if [ "$#" -lt 5 ]; then
-  echo "Usage: $0 <cluster_label> <mysql_host> <mysql_user> <mysql_password> <mysql_db> [inventory_file]"
-  echo "Example: $0 d8s_v6 172.17.1.6 root@sys 'OceanBase#!123' sbtest inventory/oceanbase_hosts_auto"
+  echo "Usage: $0 <cluster_label> <mysql_host> <mysql_user> <mysql_password_or_dash> <mysql_db> [inventory_file]"
+  echo "Example (quoted password): $0 d8s_v6 172.17.1.6 root@sys 'OceanBase#!123' sbtest inventory/oceanbase_hosts_auto"
+  echo "Example (env password): OCEANBASE_BENCH_PASSWORD='OceanBase#!123' $0 d8s_v6 172.17.1.6 root@sys - sbtest inventory/oceanbase_hosts_auto"
   exit 1
 fi
 
 CLUSTER_LABEL="$1"
 MYSQL_HOST="$2"
 MYSQL_USER="$3"
-MYSQL_PASSWORD="$4"
+MYSQL_PASSWORD_ARG="$4"
 MYSQL_DB="$5"
 INVENTORY_FILE="${6:-inventory/oceanbase_hosts_auto}"
+
+if [ "$MYSQL_PASSWORD_ARG" = "-" ]; then
+  MYSQL_PASSWORD="${OCEANBASE_BENCH_PASSWORD:-}"
+  if [ -z "$MYSQL_PASSWORD" ]; then
+    read -r -s -p "Enter MySQL password: " MYSQL_PASSWORD
+    echo ""
+  fi
+else
+  MYSQL_PASSWORD="$MYSQL_PASSWORD_ARG"
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ANSIBLE_ROOT="$(dirname "$SCRIPT_DIR")"
