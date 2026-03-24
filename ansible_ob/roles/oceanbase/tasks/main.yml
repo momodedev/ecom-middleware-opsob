@@ -245,6 +245,88 @@
   set_fact:
     oceanbase_obd_cmd_prefix: "{{ 'source ~/.oceanbase-all-in-one/bin/env.sh && ' if oceanbase_installer_type == 'tar' else '' }}"
 
+- name: Query latest OceanBase release metadata
+  uri:
+    url: https://api.github.com/repos/oceanbase/oceanbase/releases/latest
+    return_content: true
+  register: oceanbase_release_metadata
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - oceanbase_installer_type == 'rpm'
+    - oceanbase_seed_local_mirror_from_github | bool
+
+- name: Select OceanBase component RPM URLs from latest release
+  set_fact:
+    oceanbase_component_rpms:
+      - name: oceanbase-ce
+        url: "{{ (oceanbase_release_metadata.json.assets | default([]) | selectattr('name', 'match', '^oceanbase-ce-.*\\.' ~ oceanbase_target_os_tag ~ '\\.' ~ oceanbase_target_arch ~ '\\.rpm$') | map(attribute='browser_download_url') | list | first | default('')) }}"
+      - name: oceanbase-ce-libs
+        url: "{{ (oceanbase_release_metadata.json.assets | default([]) | selectattr('name', 'match', '^oceanbase-ce-libs-.*\\.' ~ oceanbase_target_os_tag ~ '\\.' ~ oceanbase_target_arch ~ '\\.rpm$') | map(attribute='browser_download_url') | list | first | default('')) }}"
+      - name: oceanbase-ce-sql-parser
+        url: "{{ (oceanbase_release_metadata.json.assets | default([]) | selectattr('name', 'match', '^oceanbase-ce-sql-parser-.*\\.' ~ oceanbase_target_os_tag ~ '\\.' ~ oceanbase_target_arch ~ '\\.rpm$') | map(attribute='browser_download_url') | list | first | default('')) }}"
+      - name: oceanbase-ce-utils
+        url: "{{ (oceanbase_release_metadata.json.assets | default([]) | selectattr('name', 'match', '^oceanbase-ce-utils-.*\\.' ~ oceanbase_target_os_tag ~ '\\.' ~ oceanbase_target_arch ~ '\\.rpm$') | map(attribute='browser_download_url') | list | first | default('')) }}"
+  when:
+    - oceanbase_installer_type == 'rpm'
+    - oceanbase_seed_local_mirror_from_github | bool
+
+- name: Fail when OceanBase server RPM is missing in latest release
+  fail:
+    msg: "No oceanbase-ce RPM was found for {{ oceanbase_target_os_tag }} {{ oceanbase_target_arch }} in the latest OceanBase release."
+  when:
+    - oceanbase_installer_type == 'rpm'
+    - oceanbase_seed_local_mirror_from_github | bool
+    - (oceanbase_component_rpms | selectattr('name', 'equalto', 'oceanbase-ce') | map(attribute='url') | list | first | default('')) | length == 0
+
+- name: Download OceanBase component RPMs for local OBD mirror
+  get_url:
+    url: "{{ item.url }}"
+    dest: "/tmp/{{ item.url | basename }}"
+    mode: '0644'
+  loop: "{{ oceanbase_component_rpms }}"
+  when:
+    - oceanbase_installer_type == 'rpm'
+    - oceanbase_seed_local_mirror_from_github | bool
+    - item.url | length > 0
+
+- name: Disable remote OBD mirrors to prioritize local packages
+  shell: |
+    obd mirror disable remote || true
+  become_user: admin
+  when:
+    - oceanbase_installer_type == 'rpm'
+    - oceanbase_seed_local_mirror_from_github | bool
+
+- name: Clone downloaded OceanBase RPMs into local OBD mirror
+  shell: |
+    obd mirror clone /tmp/{{ item.url | basename }} -f
+  become_user: admin
+  loop: "{{ oceanbase_component_rpms }}"
+  when:
+    - oceanbase_installer_type == 'rpm'
+    - oceanbase_seed_local_mirror_from_github | bool
+    - item.url | length > 0
+
+- name: Show local OBD mirror packages
+  shell: |
+    obd mirror list local
+  become_user: admin
+  register: oceanbase_local_mirror_list
+  changed_when: false
+  when:
+    - oceanbase_installer_type == 'rpm'
+    - oceanbase_seed_local_mirror_from_github | bool
+
+- name: Display local OBD mirror summary
+  debug:
+    var: oceanbase_local_mirror_list.stdout
+  when:
+    - oceanbase_installer_type == 'rpm'
+    - oceanbase_seed_local_mirror_from_github | bool
+    - oceanbase_local_mirror_list.stdout is defined
+
 - name: Update /etc/hosts with all observer nodes
   blockinfile:
     path: /etc/hosts
