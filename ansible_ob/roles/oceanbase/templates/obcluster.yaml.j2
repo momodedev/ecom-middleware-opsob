@@ -35,10 +35,10 @@ user:
     obshell_port: 2886
     
     # Storage configuration
-    datafile_size: {{ oceanbase_data_disk_size_gb // 3 }}G
+    datafile_size: {{ (oceanbase_datafile_size_gb_no_data_disk if (oceanbase_skip_data_mount | bool) else oceanbase_datafile_size_gb) }}G
     datafile_next: 1G
-    datafile_maxsize: 100G
-    log_disk_size: {{ oceanbase_redo_disk_size_gb }}G
+    datafile_maxsize: {{ (oceanbase_datafile_maxsize_gb_no_data_disk if (oceanbase_skip_data_mount | bool) else oceanbase_datafile_maxsize_gb) }}G
+    log_disk_size: {{ (oceanbase_log_disk_size_gb_no_data_disk if (oceanbase_skip_data_mount | bool) else oceanbase_log_disk_size_gb) }}G
     
     # Syslog configuration
     enable_syslog_recycle: true
