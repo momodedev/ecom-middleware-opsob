@@ -34,6 +34,7 @@
 
     benchmark_prepare_data: true
     benchmark_cleanup_data: false
+    benchmark_fail_on_case_error: false
 
   tasks:
     - name: Ensure benchmark output directory exists
@@ -72,7 +73,7 @@
       copy:
         dest: "{{ benchmark_output_csv }}"
         mode: "0644"
-        content: "timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors\n"
+        content: "timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors,exit_code,status\n"
 
     - name: Preflight check for OceanBase MySQL endpoint reachability
       wait_for:
@@ -130,9 +131,10 @@
 
     - name: Run benchmark matrix and collect CSV
       shell: |
-        set -euo pipefail
+        set -uo pipefail
         now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        result=$(sysbench /usr/share/sysbench/{{ item.0 }}.lua \
+        result_file=$(mktemp)
+        sysbench /usr/share/sysbench/{{ item.0 }}.lua \
           --db-driver=mysql \
           --mysql-host={{ mysql_host | quote }} \
           --mysql-port={{ mysql_port }} \
@@ -145,7 +147,10 @@
           --time={{ benchmark_run_sec }} \
           --report-interval={{ benchmark_report_interval }} \
           --db-ps-mode=disable \
-          run)
+          run >"$result_file" 2>&1
+        rc=$?
+        result="$(cat "$result_file")"
+        rm -f "$result_file"
 
         tps=$(echo "$result" | awk -F'[()]' '/transactions:/ {gsub(/ per sec\./, "", $2); print $2}' | awk '{print $1}' | tail -1)
         p95=$(echo "$result" | awk '/95th percentile:/ {print $3}' | tail -1)
@@ -158,11 +163,39 @@
         avg_lat=${avg_lat:-0}
         total_q=${total_q:-0}
         errs=${errs:-0}
+        status="ok"
 
-        echo "$now,{{ benchmark_label }},{{ item.0 }},{{ item.1 }},$tps,$p95,$avg_lat,$total_q,$errs" >> {{ benchmark_output_csv | quote }}
+        if [ "$rc" -ne 0 ]; then
+          status="failed"
+        fi
+
+        echo "$now,{{ benchmark_label }},{{ item.0 }},{{ item.1 }},$tps,$p95,$avg_lat,$total_q,$errs,$rc,$status" >> {{ benchmark_output_csv | quote }}
+
+        if [ "$rc" -ne 0 ]; then
+          echo "Benchmark case failed: workload={{ item.0 }} threads={{ item.1 }} rc=$rc" >&2
+          echo "$result" >&2
+          exit "$rc"
+        fi
+
+        echo "Benchmark case succeeded: workload={{ item.0 }} threads={{ item.1 }}"
       loop: "{{ benchmark_workloads | product(benchmark_threads) | list }}"
       loop_control:
         label: "{{ item.0 }} threads={{ item.1 }}"
+      register: benchmark_case_runs
+      failed_when: false
+
+    - name: Summarize failed benchmark cases
+      debug:
+        msg: "{{ item.item.0 }} threads={{ item.item.1 }} failed with rc={{ item.rc }}"
+      loop: "{{ benchmark_case_runs.results | selectattr('rc', 'ne', 0) | list }}"
+      when: benchmark_case_runs is defined
+
+    - name: Fail when benchmark case errors are present and fail-fast is enabled
+      fail:
+        msg: "Some benchmark matrix cases failed. See task output for failing workload/thread combinations."
+      when:
+        - benchmark_fail_on_case_error | bool
+        - (benchmark_case_runs.results | selectattr('rc', 'ne', 0) | list | length) > 0
 
     - name: Cleanup sysbench data set
       shell: |
