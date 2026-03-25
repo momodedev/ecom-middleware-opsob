@@ -24,58 +24,108 @@
     state: present
   tags: obagent
 
+- name: Detect installed obagent control binary path
+  ansible.builtin.shell: |
+    set -euo pipefail
+    rpm -ql obagent | awk '/\/ob_agentctl$/ {print; exit}'
+  args:
+    executable: /bin/bash
+  register: obagent_ctl_path_cmd
+  changed_when: false
+  tags: obagent
+
+- name: Fail when ob_agentctl path cannot be detected
+  ansible.builtin.fail:
+    msg: "Cannot locate ob_agentctl from installed obagent package"
+  when: (obagent_ctl_path_cmd.stdout | default('') | trim | length) == 0
+  tags: obagent
+
+- name: Set obagent path facts
+  ansible.builtin.set_fact:
+    obagent_ctl_path: "{{ obagent_ctl_path_cmd.stdout | trim }}"
+    obagent_home_dir: "{{ (obagent_ctl_path_cmd.stdout | trim) | regex_replace('/bin/ob_agentctl$', '') }}"
+  tags: obagent
+
+- name: Ensure ob_agentctl is executable
+  ansible.builtin.file:
+    path: "{{ obagent_ctl_path }}"
+    mode: '0755'
+    state: file
+  tags: obagent
+
+- name: Ensure obagent systemd service points to detected binary path
+  ansible.builtin.replace:
+    path: /usr/lib/systemd/system/obagent.service
+    regexp: '^ExecStart=.*$'
+    replace: 'ExecStart={{ obagent_ctl_path }} start'
+  tags: obagent
+
+- name: Ensure obagent systemd stop command path is correct
+  ansible.builtin.replace:
+    path: /usr/lib/systemd/system/obagent.service
+    regexp: '^ExecStop=.*$'
+    replace: 'ExecStop={{ obagent_ctl_path }} stop'
+  tags: obagent
+
+- name: Ensure obagent systemd reload command path is correct
+  ansible.builtin.replace:
+    path: /usr/lib/systemd/system/obagent.service
+    regexp: '^ExecReload=.*$'
+    replace: 'ExecReload={{ obagent_ctl_path }} restart'
+  tags: obagent
+
 - name: Disable obagent metrics basic auth for Prometheus scraping
   ansible.builtin.replace:
-    path: /home/admin/obagent/conf/config_properties/basic_auth.yaml
+    path: "{{ obagent_home_dir }}/conf/config_properties/basic_auth.yaml"
     regexp: '(^\s*- key:\s*agent\.http\.basic\.auth\.metricAuthEnabled\s*\n\s*value:\s*)true'
     replace: '\1false'
   tags: obagent
 
 - name: Enable OceanBase metrics pipeline in obagent
   ansible.builtin.replace:
-    path: /home/admin/obagent/conf/config_properties/monagent_pipeline.yaml
+    path: "{{ obagent_home_dir }}/conf/config_properties/monagent_pipeline.yaml"
     regexp: '(^\s*- key:\s*monagent\.pipeline\.ob\.status\s*\n\s*value:\s*)inactive'
     replace: '\1active'
   tags: obagent
 
 - name: Set obagent monitor user for OceanBase metrics
   ansible.builtin.replace:
-    path: /home/admin/obagent/conf/config_properties/monagent_pipeline.yaml
+    path: "{{ obagent_home_dir }}/conf/config_properties/monagent_pipeline.yaml"
     regexp: '(^\s*- key:\s*monagent\.ob\.monitor\.user\s*\n\s*value:\s*).*$'
     replace: '\1ocp_monitor'
   tags: obagent
 
 - name: Clear obagent monitor password value when encryption is enabled
   ansible.builtin.replace:
-    path: /home/admin/obagent/conf/config_properties/monagent_pipeline.yaml
+    path: "{{ obagent_home_dir }}/conf/config_properties/monagent_pipeline.yaml"
     regexp: '(^\s*- key:\s*monagent\.ob\.monitor\.password\s*\n\s*value:\s*).*$'
     replace: '\1'
   tags: obagent
 
 - name: Set obagent host IP
   ansible.builtin.replace:
-    path: /home/admin/obagent/conf/config_properties/monagent_pipeline.yaml
+    path: "{{ obagent_home_dir }}/conf/config_properties/monagent_pipeline.yaml"
     regexp: '(^\s*- key:\s*monagent\.host\.ip\s*\n\s*value:\s*).*$'
     replace: '\1{{ private_ip | default(ansible_host) }}'
   tags: obagent
 
 - name: Set obagent cluster name
   ansible.builtin.replace:
-    path: /home/admin/obagent/conf/config_properties/monagent_pipeline.yaml
+    path: "{{ obagent_home_dir }}/conf/config_properties/monagent_pipeline.yaml"
     regexp: '(^\s*- key:\s*monagent\.ob\.cluster\.name\s*\n\s*value:\s*).*$'
     replace: '\1{{ oceanbase_cluster_name | default("ob_cluster") }}'
   tags: obagent
 
 - name: Set obagent OceanBase data path
   ansible.builtin.replace:
-    path: /home/admin/obagent/conf/config_properties/monagent_pipeline.yaml
+    path: "{{ obagent_home_dir }}/conf/config_properties/monagent_pipeline.yaml"
     regexp: '(^\s*- key:\s*ob\.data\.path\s*\n\s*value:\s*).*$'
     replace: '\1/oceanbase/data'
   tags: obagent
 
 - name: Set obagent OceanBase log path
   ansible.builtin.replace:
-    path: /home/admin/obagent/conf/config_properties/monagent_pipeline.yaml
+    path: "{{ obagent_home_dir }}/conf/config_properties/monagent_pipeline.yaml"
     regexp: '(^\s*- key:\s*ob\.log\.path\s*\n\s*value:\s*).*$'
     replace: '\1/oceanbase/redo'
   tags: obagent
@@ -92,7 +142,7 @@
 
 - name: Fallback to inactive OB pipeline when obagent start fails
   ansible.builtin.replace:
-    path: /home/admin/obagent/conf/config_properties/monagent_pipeline.yaml
+    path: "{{ obagent_home_dir }}/conf/config_properties/monagent_pipeline.yaml"
     regexp: '(^\s*- key:\s*monagent\.pipeline\.ob\.status\s*\n\s*value:\s*)active'
     replace: '\1inactive'
   when: obagent_service_start is failed
