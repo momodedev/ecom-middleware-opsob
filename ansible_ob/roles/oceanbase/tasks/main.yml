@@ -862,7 +862,7 @@
 
     success=0
     last_rc=1
-    for sql in "$${CANDIDATES[@]}"; do
+    for sql in "${CANDIDATES[@]}"; do
       if run_sql "$sql"; then
         echo "Leader rebalance command accepted: $sql"
         success=1
@@ -935,16 +935,40 @@
 
 - name: Query OceanBase leader distribution by server
   shell: |
-    set -euo pipefail
-    SQL="SELECT svr_ip, COUNT(*) AS leader_count FROM oceanbase.__all_meta_table WHERE role = 1 GROUP BY svr_ip ORDER BY svr_ip;"
+    set -uo pipefail
 
-    if [ "{{ oceanbase_sql_client_cmd | default('') }}" = "obclient" ]; then
-      obclient -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -A -e "$SQL"
-    elif [ "{{ oceanbase_sql_client_cmd | default('') }}" = "mysql" ]; then
-      mysql -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -e "$SQL"
-    else
-      echo "Neither obclient nor mysql client is available" >&2
-      exit 1
+    run_sql() {
+      stmt="$1"
+      if [ "{{ oceanbase_sql_client_cmd | default('') }}" = "obclient" ]; then
+        obclient -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -A -e "$stmt"
+      elif [ "{{ oceanbase_sql_client_cmd | default('') }}" = "mysql" ]; then
+        mysql -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -e "$stmt"
+      else
+        return 127
+      fi
+    }
+
+    CANDIDATE_SQLS=(
+      "SELECT svr_ip, COUNT(*) AS leader_count FROM oceanbase.__all_meta_table WHERE role = 1 GROUP BY svr_ip ORDER BY svr_ip;"
+      "SELECT svr_ip, COUNT(*) AS leader_count FROM oceanbase.__all_virtual_meta_table WHERE role = 1 GROUP BY svr_ip ORDER BY svr_ip;"
+    )
+
+    success=0
+    last_rc=1
+    for sql in "${CANDIDATE_SQLS[@]}"; do
+      if run_sql "$sql"; then
+        echo "Leader distribution SQL accepted: $sql"
+        success=1
+        break
+      else
+        last_rc=$?
+        echo "Leader distribution SQL not accepted: $sql" >&2
+      fi
+    done
+
+    if [ "$success" -eq 0 ]; then
+      echo "No compatible leader distribution SQL accepted by current OceanBase version." >&2
+      exit "$last_rc"
     fi
   args:
     executable: /bin/bash
@@ -953,6 +977,7 @@
   become_user: "{{ oceanbase_admin_user }}"
   register: oceanbase_leader_distribution_result
   changed_when: false
+  failed_when: "(oceanbase_leader_distribution_result.rc | default(0)) != 0 and (oceanbase_optimize_verify_leader_distribution_strict | bool)"
   when:
     - oceanbase_optimize_after_start | bool
     - oceanbase_optimize_verify_leader_distribution | bool
