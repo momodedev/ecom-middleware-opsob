@@ -158,48 +158,81 @@
     oceanbase_redo_disk_size_bytes: "{{ (oceanbase_redo_disk_size_gb | int) * 1073741824 }}"
   when: not (oceanbase_skip_data_mount | bool)
 
-- name: Resolve data disk device
-  set_fact:
-    oceanbase_data_disk_device_resolved: >-
-      {{
-        oceanbase_data_disk_device
-        if (oceanbase_data_disk_device | length > 0)
-        else (
-          oceanbase_candidate_disks.stdout_lines | default([])
-          | select('search', ' ' ~ (oceanbase_data_disk_size_bytes | string) ~ '$')
-          | map('regex_search', '^(\\S+)')
-          | list
-          | first
-          | default('')
-        )
-      }}
+- name: Resolve data disk device from explicit var or closest unmounted size
+  shell: |
+    set -euo pipefail
+    if [ -n "{{ oceanbase_data_disk_device | default('') }}" ]; then
+      echo "{{ oceanbase_data_disk_device }}"
+      exit 0
+    fi
+
+    mounted_devs=$(lsblk -nrpo NAME,MOUNTPOINT | awk '$2!="" {print $1}')
+    mounted_parents=$(for dev in $mounted_devs; do
+      parent=$(lsblk -ndo PKNAME "$dev" 2>/dev/null || true)
+      if [ -n "$parent" ]; then
+        echo "/dev/$parent"
+      fi
+    done | sort -u)
+
+    lsblk -dnbo PATH,SIZE,TYPE | awk '$3=="disk" {print $1" "$2}' | while read -r dev size; do
+      if echo "$mounted_parents" | grep -qx "$dev"; then
+        continue
+      fi
+      echo "$dev $size"
+    done | awk -v t={{ oceanbase_data_disk_size_bytes }} '
+      {
+        d=$2-t; if (d<0) d=-d;
+        if (best=="" || d<best) { best=d; dev=$1 }
+      }
+      END { if (dev!="") print dev }
+    '
+  register: oceanbase_data_disk_device_detect
+  changed_when: false
   when: not (oceanbase_skip_data_mount | bool)
 
-- name: Build remaining disk candidates excluding resolved data disk
+- name: Set resolved data disk device
   set_fact:
-    oceanbase_candidate_disks_remaining: >-
-      {{
-        oceanbase_candidate_disks.stdout_lines | default([])
-        | reject('search', '^' ~ (oceanbase_data_disk_device_resolved | default('')) ~ '\\s')
-        | list
-      }}
+    oceanbase_data_disk_device_resolved: "{{ oceanbase_data_disk_device_detect.stdout | trim }}"
   when: not (oceanbase_skip_data_mount | bool)
 
-- name: Resolve redo disk device
+- name: Resolve redo disk device from explicit var or closest unmounted size excluding data disk
+  shell: |
+    set -euo pipefail
+    if [ -n "{{ oceanbase_redo_disk_device | default('') }}" ]; then
+      echo "{{ oceanbase_redo_disk_device }}"
+      exit 0
+    fi
+
+    mounted_devs=$(lsblk -nrpo NAME,MOUNTPOINT | awk '$2!="" {print $1}')
+    mounted_parents=$(for dev in $mounted_devs; do
+      parent=$(lsblk -ndo PKNAME "$dev" 2>/dev/null || true)
+      if [ -n "$parent" ]; then
+        echo "/dev/$parent"
+      fi
+    done | sort -u)
+
+    lsblk -dnbo PATH,SIZE,TYPE | awk '$3=="disk" {print $1" "$2}' | while read -r dev size; do
+      if [ "$dev" = "{{ oceanbase_data_disk_device_resolved | default('') }}" ]; then
+        continue
+      fi
+      if echo "$mounted_parents" | grep -qx "$dev"; then
+        continue
+      fi
+      echo "$dev $size"
+    done | awk -v t={{ oceanbase_redo_disk_size_bytes }} '
+      {
+        d=$2-t; if (d<0) d=-d;
+        if (best=="" || d<best) { best=d; dev=$1 }
+      }
+      END { if (dev!="") print dev }
+    '
+  register: oceanbase_redo_disk_device_detect
+  changed_when: false
+  when: not (oceanbase_skip_data_mount | bool)
+
+- name: Set resolved redo disk device
   set_fact:
-    oceanbase_redo_disk_device_resolved: >-
-      {{
-        oceanbase_redo_disk_device
-        if (oceanbase_redo_disk_device | length > 0)
-        else (
-          oceanbase_candidate_disks_remaining | default([])
-          | select('search', ' ' ~ (oceanbase_redo_disk_size_bytes | string) ~ '$')
-          | map('regex_search', '^(\\S+)')
-          | list
-          | first
-          | default('')
-        )
-      }}
+    oceanbase_redo_disk_device_resolved: "{{ oceanbase_redo_disk_device_detect.stdout | trim }}"
   when: not (oceanbase_skip_data_mount | bool)
 
 - name: Show resolved OceanBase disk mapping
