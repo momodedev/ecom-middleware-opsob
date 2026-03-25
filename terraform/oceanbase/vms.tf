@@ -74,7 +74,7 @@ resource "azurerm_linux_virtual_machine" "oceanbase_observers" {
     publisher = "resf"
     offer     = "rockylinux-x86_64"
     sku       = "9-base"
-    version   = "9.6.20250531"
+    version   = "latest"
   }
 
   plan {

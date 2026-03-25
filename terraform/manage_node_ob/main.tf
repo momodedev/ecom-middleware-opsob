@@ -193,7 +193,7 @@ resource "azurerm_linux_virtual_machine" "example" {
     publisher = "resf"
     offer     = "rockylinux-x86_64"
     sku       = "9-base"
-    version   = "9.6.20250531"
+    version   = "latest"
   }
 
   plan {
@@ -209,8 +209,7 @@ resource "azurerm_linux_virtual_machine" "example" {
 
   lifecycle {
     ignore_changes = [
-      bypass_platform_safety_checks_on_user_schedule_enabled,
-      custom_data  # Prevent recreation on template changes
+      bypass_platform_safety_checks_on_user_schedule_enabled
     ]
   }
 }

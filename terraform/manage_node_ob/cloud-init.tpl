@@ -1,5 +1,5 @@
 #cloud-config
-# Cloud-init configuration for control node initialization (Rocky Linux 9)
+# Cloud-init configuration for control node initialization (Rocky Linux 9.7)
 # Azure-native bootstrap template for Terraform, Ansible, and Azure CLI setup
 
 package_update: true
@@ -72,7 +72,7 @@ runcmd:
   # Login to Azure using managed identity (control node has Contributor role)
   - su - azureadmin -c 'az login --identity'
 
-  # Upgrade Rocky Linux to latest 9.x (targeting 9.7) after tools are installed
+  # Upgrade Rocky Linux to the current 9.7 baseline after tools are installed
   - dnf -y upgrade --refresh
   - dnf clean all || true
   
