@@ -56,21 +56,21 @@
   ansible.builtin.replace:
     path: /usr/lib/systemd/system/obagent.service
     regexp: '^ExecStart=.*$'
-    replace: 'ExecStart=/bin/bash {{ obagent_ctl_path }} start'
+    replace: 'ExecStart={{ obagent_ctl_path }} start'
   tags: obagent
 
 - name: Ensure obagent systemd stop command path is correct
   ansible.builtin.replace:
     path: /usr/lib/systemd/system/obagent.service
     regexp: '^ExecStop=.*$'
-    replace: 'ExecStop=/bin/bash {{ obagent_ctl_path }} stop'
+    replace: 'ExecStop={{ obagent_ctl_path }} stop'
   tags: obagent
 
 - name: Ensure obagent systemd reload command path is correct
   ansible.builtin.replace:
     path: /usr/lib/systemd/system/obagent.service
     regexp: '^ExecReload=.*$'
-    replace: 'ExecReload=/bin/bash {{ obagent_ctl_path }} restart'
+    replace: 'ExecReload={{ obagent_ctl_path }} restart'
   tags: obagent
 
 - name: Disable obagent metrics basic auth for Prometheus scraping
@@ -98,7 +98,7 @@
   ansible.builtin.replace:
     path: "{{ obagent_home_dir }}/conf/config_properties/monagent_pipeline.yaml"
     regexp: '(^\s*- key:\s*monagent\.ob\.monitor\.password\s*\n\s*value:\s*).*$'
-    replace: '\1'
+    replace: '\1""'
   tags: obagent
 
 - name: Set obagent host IP
