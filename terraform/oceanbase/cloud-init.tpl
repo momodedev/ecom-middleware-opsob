@@ -201,11 +201,18 @@ EOF
   - |
     set -euxo pipefail
 
+    # Ensure release metadata is current before attempting a minor release jump.
+    dnf -y install rocky-release || true
+
     dnf -y --releasever=9.7 distro-sync --refresh || \
     dnf -y --releasever=9.7 upgrade --refresh || \
     dnf -y upgrade --refresh
 
     version_id=$(awk -F= '/^VERSION_ID=/{gsub(/"/,"",$2); print $2}' /etc/os-release)
+    release_pkg=$(rpm -q rocky-release 2>/dev/null || echo "rocky-release-not-installed")
+    echo "VERSION_ID=$version_id" | tee /var/log/rocky-version-after-bootstrap.log
+    echo "$release_pkg" | tee -a /var/log/rocky-version-after-bootstrap.log
+
     if echo "$version_id" | grep -Eq '^9\\.7([.].*)?$'; then
       echo "Rocky Linux baseline is now $version_id"
     else
@@ -213,6 +220,9 @@ EOF
     fi
 
     dnf clean all || true
+
+  # Signal cloud-init completion for observer bootstrap diagnostics
+  - touch /var/lib/cloud/instance/oceanbase-bootstrap-initialized
 
 power_state:
   delay: now
