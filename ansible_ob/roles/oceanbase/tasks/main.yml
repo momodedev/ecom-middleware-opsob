@@ -129,17 +129,86 @@
     ssh_key_bits: 2048
     ssh_key_file: .ssh/id_rsa
 
-- name: Check OceanBase data mount device
-  stat:
-    path: "{{ oceanbase_data_mount_device }}"
-  register: oceanbase_mount_device
-
-- name: Fail when expected OceanBase data mount device is missing
-  fail:
-    msg: "Expected OceanBase mount device {{ oceanbase_data_mount_device }} was not found on {{ inventory_hostname }}"
+- name: Discover candidate unmounted data disks
+  shell: |
+    set -euo pipefail
+    mounted_devs=$(lsblk -nrpo NAME,MOUNTPOINT | awk '$2!="" {print $1}')
+    mounted_parents=$(for dev in $mounted_devs; do
+      parent=$(lsblk -ndo PKNAME "$dev" 2>/dev/null || true)
+      if [ -n "$parent" ]; then
+        echo "/dev/$parent"
+      fi
+    done | sort -u)
+    lsblk -dnbo PATH,SIZE,TYPE | awk '$3=="disk" {print $1" "$2}' | while read -r dev size; do
+      if echo "$mounted_parents" | grep -qx "$dev"; then
+        continue
+      fi
+      echo "$dev $size"
+    done
+  register: oceanbase_candidate_disks
+  changed_when: false
   when:
+    - not (oceanbase_skip_data_mount | bool)
+    - oceanbase_disk_auto_detect_by_size | bool
+    - (oceanbase_data_disk_device | length == 0) or (oceanbase_redo_disk_device | length == 0)
+
+- name: Resolve data and redo disk devices
+  set_fact:
+    oceanbase_data_disk_device_resolved: >-
+      {{
+        oceanbase_data_disk_device
+        if (oceanbase_data_disk_device | length > 0)
+        else (
+          (oceanbase_candidate_disks.stdout_lines | default([])
+          | select('search', ' ' ~ ((oceanbase_data_disk_size_gb | int) * 1073741824) | string ~ '$')
+          | map('regex_replace', '^(\\S+)\\s+.*$', '\\1')
+          | list
+          | first
+          | default(''))
+        )
+      }}
+    oceanbase_redo_disk_device_resolved: >-
+      {{
+        oceanbase_redo_disk_device
+        if (oceanbase_redo_disk_device | length > 0)
+        else (
+          (oceanbase_candidate_disks.stdout_lines | default([])
+          | reject('search', '^' ~ (
+              oceanbase_data_disk_device
+              if (oceanbase_data_disk_device | length > 0)
+              else (
+                (oceanbase_candidate_disks.stdout_lines | default([])
+                | select('search', ' ' ~ ((oceanbase_data_disk_size_gb | int) * 1073741824) | string ~ '$')
+                | map('regex_replace', '^(\\S+)\\s+.*$', '\\1')
+                | list
+                | first
+                | default('')
+              )
+            ) ~ '\\s')
+          | select('search', ' ' ~ ((oceanbase_redo_disk_size_gb | int) * 1073741824) | string ~ '$')
+          | map('regex_replace', '^(\\S+)\\s+.*$', '\\1')
+          | list
+          | first
+          | default(''))
+        )
+      }}
+  when: not (oceanbase_skip_data_mount | bool)
+
+- name: Fail when expected 500G data disk is missing
+  fail:
+    msg: "Cannot find OceanBase data disk ({{ oceanbase_data_disk_size_gb }}GiB) on {{ inventory_hostname }}"
+  when:
+    - not (oceanbase_skip_data_mount | bool)
     - oceanbase_strict_mount_check | bool
-    - not oceanbase_mount_device.stat.exists
+    - (oceanbase_data_disk_device_resolved | default('') | length) == 0
+
+- name: Fail when expected 200G redo disk is missing
+  fail:
+    msg: "Cannot find OceanBase redo disk ({{ oceanbase_redo_disk_size_gb }}GiB) on {{ inventory_hostname }}"
+  when:
+    - not (oceanbase_skip_data_mount | bool)
+    - oceanbase_strict_mount_check | bool
+    - (oceanbase_redo_disk_device_resolved | default('') | length) == 0
 
 - name: Create OceanBase directories
   file:
@@ -155,15 +224,65 @@
     - /oceanbase/redo
     - "{{ oceanbase_home_dir }}"
 
-- name: Mount data disk for OceanBase (if available)
+- name: Probe filesystem on OceanBase data disk
+  command: "blkid -o value -s TYPE {{ oceanbase_data_disk_device_resolved }}"
+  register: oceanbase_data_disk_fs_probe
+  changed_when: false
+  failed_when: false
+  when:
+    - not (oceanbase_skip_data_mount | bool)
+    - (oceanbase_data_disk_device_resolved | default('') | length) > 0
+
+- name: Probe filesystem on OceanBase redo disk
+  command: "blkid -o value -s TYPE {{ oceanbase_redo_disk_device_resolved }}"
+  register: oceanbase_redo_disk_fs_probe
+  changed_when: false
+  failed_when: false
+  when:
+    - not (oceanbase_skip_data_mount | bool)
+    - (oceanbase_redo_disk_device_resolved | default('') | length) > 0
+
+- name: Create filesystem on OceanBase data disk when needed
+  filesystem:
+    fstype: "{{ oceanbase_disk_filesystem }}"
+    dev: "{{ oceanbase_data_disk_device_resolved }}"
+  when:
+    - not (oceanbase_skip_data_mount | bool)
+    - (oceanbase_data_disk_device_resolved | default('') | length) > 0
+    - (oceanbase_data_disk_fs_probe.stdout | default('') | trim) == ''
+
+- name: Create filesystem on OceanBase redo disk when needed
+  filesystem:
+    fstype: "{{ oceanbase_disk_filesystem }}"
+    dev: "{{ oceanbase_redo_disk_device_resolved }}"
+  when:
+    - not (oceanbase_skip_data_mount | bool)
+    - (oceanbase_redo_disk_device_resolved | default('') | length) > 0
+    - (oceanbase_redo_disk_fs_probe.stdout | default('') | trim) == ''
+
+- name: Mount OceanBase data disk (500G) to data directory
   mount:
-    path: /oceanbase
-    src: "{{ oceanbase_data_mount_device }}"
-    fstype: xfs
+    path: "{{ oceanbase_data_mount_point }}"
+    src: "{{ oceanbase_data_disk_device_resolved }}"
+    fstype: "{{ oceanbase_disk_filesystem }}"
     opts: defaults
     state: mounted
   ignore_errors: "{{ not (oceanbase_strict_mount_check | bool) }}"
-  when: not (oceanbase_skip_data_mount | bool)
+  when:
+    - not (oceanbase_skip_data_mount | bool)
+    - (oceanbase_data_disk_device_resolved | default('') | length) > 0
+
+- name: Mount OceanBase redo disk (200G) to redo directory
+  mount:
+    path: "{{ oceanbase_redo_mount_point }}"
+    src: "{{ oceanbase_redo_disk_device_resolved }}"
+    fstype: "{{ oceanbase_disk_filesystem }}"
+    opts: defaults
+    state: mounted
+  ignore_errors: "{{ not (oceanbase_strict_mount_check | bool) }}"
+  when:
+    - not (oceanbase_skip_data_mount | bool)
+    - (oceanbase_redo_disk_device_resolved | default('') | length) > 0
 
 - name: Detect OceanBase installer package type
   set_fact:

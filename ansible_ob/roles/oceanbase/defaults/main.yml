@@ -7,6 +7,12 @@ oceanbase_memory_limit: "8G"
 oceanbase_cpu_count: 8
 oceanbase_data_disk_size_gb: 500
 oceanbase_redo_disk_size_gb: 200
+oceanbase_data_mount_point: /oceanbase/data
+oceanbase_redo_mount_point: /oceanbase/redo
+oceanbase_data_disk_device: ""
+oceanbase_redo_disk_device: ""
+oceanbase_disk_filesystem: xfs
+oceanbase_disk_auto_detect_by_size: true
 # Storage sizing when data disk is mounted.
 oceanbase_datafile_size_gb: 166
 oceanbase_datafile_maxsize_gb: 200
@@ -37,7 +43,6 @@ oceanbase_obd_clean_workdirs_before_fresh_deploy: true
 oceanbase_seed_local_mirror_from_github: true
 oceanbase_target_os_tag: "el8"
 oceanbase_target_arch: "x86_64"
-oceanbase_data_mount_device: "/dev/mapper/vgob-lvob"
 oceanbase_strict_mount_check: true
 oceanbase_skip_data_mount: false
 
