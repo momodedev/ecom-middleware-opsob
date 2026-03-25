@@ -42,14 +42,14 @@
   ansible.builtin.replace:
     path: /home/admin/obagent/conf/config_properties/monagent_pipeline.yaml
     regexp: '(^\s*- key:\s*monagent\.ob\.monitor\.user\s*\n\s*value:\s*).*$'
-    replace: '\1root@sys'
+    replace: '\1ocp_monitor'
   tags: obagent
 
-- name: Set obagent monitor password for OceanBase metrics
+- name: Clear obagent monitor password value when encryption is enabled
   ansible.builtin.replace:
     path: /home/admin/obagent/conf/config_properties/monagent_pipeline.yaml
     regexp: '(^\s*- key:\s*monagent\.ob\.monitor\.password\s*\n\s*value:\s*).*$'
-    replace: '\1{{ oceanbase_root_password }}'
+    replace: '\1'
   tags: obagent
 
 - name: Set obagent host IP
@@ -86,4 +86,59 @@
     daemon_reload: yes
     enabled: yes
     state: restarted
+  register: obagent_service_start
+  failed_when: false
+  tags: obagent
+
+- name: Fallback to inactive OB pipeline when obagent start fails
+  ansible.builtin.replace:
+    path: /home/admin/obagent/conf/config_properties/monagent_pipeline.yaml
+    regexp: '(^\s*- key:\s*monagent\.pipeline\.ob\.status\s*\n\s*value:\s*)active'
+    replace: '\1inactive'
+  when: obagent_service_start is failed
+  tags: obagent
+
+- name: Retry start obagent after fallback config
+  ansible.builtin.systemd:
+    name: obagent.service
+    daemon_reload: yes
+    enabled: yes
+    state: restarted
+  register: obagent_service_retry
+  failed_when: false
+  when: obagent_service_start is failed
+  tags: obagent
+
+- name: Capture obagent service status on failure
+  ansible.builtin.command: systemctl --no-pager -l status obagent.service
+  register: obagent_service_status
+  changed_when: false
+  failed_when: false
+  when:
+    - obagent_service_start is failed
+    - obagent_service_retry is not defined or obagent_service_retry is failed
+  tags: obagent
+
+- name: Capture obagent journal on failure
+  ansible.builtin.command: journalctl -xeu obagent.service --no-pager -n 60
+  register: obagent_service_journal
+  changed_when: false
+  failed_when: false
+  when:
+    - obagent_service_start is failed
+    - obagent_service_retry is not defined or obagent_service_retry is failed
+  tags: obagent
+
+- name: Fail when obagent still cannot start
+  ansible.builtin.fail:
+    msg: |
+      obagent.service failed to start.
+      systemctl status:
+      {{ obagent_service_status.stdout | default('n/a') }}
+
+      journalctl excerpt:
+      {{ obagent_service_journal.stdout | default('n/a') }}
+  when:
+    - obagent_service_start is failed
+    - obagent_service_retry is not defined or obagent_service_retry is failed
   tags: obagent
