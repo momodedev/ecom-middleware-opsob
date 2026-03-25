@@ -167,7 +167,7 @@
         else (
           oceanbase_candidate_disks.stdout_lines | default([])
           | select('search', ' ' ~ (oceanbase_data_disk_size_bytes | string) ~ '$')
-          | map('regex_replace', '^(\\S+)\\s+.*$', '\\1')
+          | map('regex_search', '^(\\S+)')
           | list
           | first
           | default('')
@@ -194,12 +194,17 @@
         else (
           oceanbase_candidate_disks_remaining | default([])
           | select('search', ' ' ~ (oceanbase_redo_disk_size_bytes | string) ~ '$')
-          | map('regex_replace', '^(\\S+)\\s+.*$', '\\1')
+          | map('regex_search', '^(\\S+)')
           | list
           | first
           | default('')
         )
       }}
+  when: not (oceanbase_skip_data_mount | bool)
+
+- name: Show resolved OceanBase disk mapping
+  debug:
+    msg: "data={{ oceanbase_data_disk_device_resolved | default('') }}, redo={{ oceanbase_redo_disk_device_resolved | default('') }}"
   when: not (oceanbase_skip_data_mount | bool)
 
 - name: Fail when expected 500G data disk is missing
