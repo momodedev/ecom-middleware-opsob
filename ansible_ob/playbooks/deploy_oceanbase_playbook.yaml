@@ -43,7 +43,7 @@
   become: yes
   vars:
     prometheus_sd_output_path: "/etc/prometheus/file_sd/oceanbase_targets.json"
-    prometheus_ob_exporter_port: 9308
+    prometheus_ob_exporter_port: 8088
   tasks:
     - name: Ensure Prometheus target directory exists
       file:

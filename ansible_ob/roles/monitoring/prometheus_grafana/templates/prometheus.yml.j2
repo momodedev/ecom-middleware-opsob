@@ -11,7 +11,22 @@ scrape_configs:
       - targets:
           - 'localhost:9090'
 
-  - job_name: 'oceanbase-exporter'
+  - job_name: 'oceanbase-basic'
+    metrics_path: /metrics/ob/basic
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/file_sd/oceanbase_targets.json'
+        refresh_interval: 30s
+
+  - job_name: 'oceanbase-extra'
+    metrics_path: /metrics/ob/extra
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/file_sd/oceanbase_targets.json'
+        refresh_interval: 30s
+
+  - job_name: 'oceanbase-agent'
+    metrics_path: /metrics/stat
     file_sd_configs:
       - files:
           - '/etc/prometheus/file_sd/oceanbase_targets.json'

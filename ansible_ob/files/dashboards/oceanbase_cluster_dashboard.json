@@ -12,7 +12,7 @@
       "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
       "id": 1,
       "options": {
-        "content": "### OceanBase Cluster Monitoring\nRow lock waits · MemStore utilisation · Transaction log sync latency · CPU / Memory / Log-disk usage for all observer nodes.\n\n> Prometheus jobs: **oceanbase-exporter** (ob_agent :9308) and **node-exporter** (:9100)  |  Select tenant via **$tenant** variable above.",
+        "content": "### OceanBase Cluster Monitoring\nRow lock waits · MemStore utilisation · Transaction log sync latency · CPU / Memory / Log-disk usage for all observer nodes.\n\n> Prometheus jobs: **oceanbase-basic / oceanbase-extra / oceanbase-agent** (obagent :8088) and **node-exporter** (:9100)  |  Select tenant via **$tenant** variable above.",
         "mode": "markdown"
       },
       "title": "",

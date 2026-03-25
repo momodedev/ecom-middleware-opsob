@@ -33,7 +33,7 @@ groups:
 
       # -------------------------------------------------------------------------
       # Alert 8 - Tenant MemStore usage high (>75 %)
-      # Source: ob_agent oceanbase-exporter (job: oceanbase-exporter, port 9308)
+      # Source: obagent OceanBase metrics (jobs: oceanbase-basic/oceanbase-extra, port 8088)
       # Metric: ob_memstore_percent  (0-100 gauge per svr_ip / tenant_name)
       # -------------------------------------------------------------------------
       - alert: OceanBaseTenantMemStoreHigh

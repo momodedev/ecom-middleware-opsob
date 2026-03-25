@@ -39,6 +39,7 @@
     node_exporter_version: "1.7.0"
   roles:
     - role: ../roles/common/node_exporter
+    - role: ../roles/common/obagent
 
 - name: Generate Prometheus node exporter targets
   hosts: localhost
@@ -49,7 +50,7 @@
     node_targets_path: "/etc/prometheus/file_sd/node_targets.json"
     oceanbase_targets_path: "/etc/prometheus/file_sd/oceanbase_targets.json"
     node_exporter_port: 9100
-    prometheus_ob_exporter_port: 9308
+    prometheus_ob_exporter_port: 8088
   tasks:
     - name: Ensure Prometheus file_sd directory exists
       file:

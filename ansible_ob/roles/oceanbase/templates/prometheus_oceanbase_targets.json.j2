@@ -2,7 +2,7 @@
   {
     "targets": [
 {% for host in groups['oceanbase'] %}
-      "{{ hostvars[host]['private_ip'] | default(hostvars[host]['ansible_host']) }}:{{ prometheus_ob_exporter_port | default(9308) }}"{% if not loop.last %},{% endif %}
+  "{{ hostvars[host]['private_ip'] | default(hostvars[host]['ansible_host']) }}:{{ prometheus_ob_exporter_port | default(8088) }}"{% if not loop.last %},{% endif %}
 {% endfor %}
     ],
     "labels": {
