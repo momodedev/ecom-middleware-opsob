@@ -839,6 +839,26 @@
     - oceanbase_optimize_set_system_memory | bool
     - (oceanbase_sql_client_cmd | default('') | length) > 0
 
+- name: Check cluster status on all nodes
+  shell: |
+    set -euo pipefail
+    if [ -f "/home/{{ oceanbase_admin_user }}/.obd/cluster/{{ oceanbase_cluster_name }}/conf/config.json" ]; then
+      {{ oceanbase_obd_cmd_prefix }}obd cluster display {{ oceanbase_cluster_name }}
+    else
+      echo "Cluster not deployed on this node"
+    fi
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become_user: "{{ oceanbase_admin_user }}"
+  register: cluster_display
+  changed_when: false
+  failed_when: false
+
+- name: Show cluster display result
+  debug:
+    var: cluster_display.stdout_lines
+  when: cluster_display.stdout_lines is defined
+
 - name: Trigger OceanBase leader rebalance
   shell: |
     set -uo pipefail
@@ -861,6 +881,7 @@
       "ALTER SYSTEM REBALANCE UNIT FOR '{{ oceanbase_optimize_tenant_name }}';"
       "ALTER SYSTEM START BALANCE LEADER;"
       "ALTER SYSTEM START BALANCE LEADER FOR TENANT = '{{ oceanbase_optimize_tenant_name }}';"
+      "ALTER SYSTEM RUN JOB 'BALANCE LEADER';"
     )
 
     success=0
