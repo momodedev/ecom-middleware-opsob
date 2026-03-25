@@ -413,6 +413,19 @@
   become_user: "{{ oceanbase_admin_user }}"
   when: oceanbase_installer_type == 'tar'
 
+- name: Install OBD wrapper for non-login shells (tar installer)
+  copy:
+    dest: /usr/local/bin/obd
+    mode: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -e
+      if [ -f "{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin/env.sh" ]; then
+        source "{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin/env.sh"
+      fi
+      exec "{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin/obd" "$@"
+  when: oceanbase_installer_type == 'tar'
+
 - name: Set OBD command wrapper
   set_fact:
     oceanbase_obd_cmd_prefix: "{{ 'source ~/.oceanbase-all-in-one/bin/env.sh && ' if oceanbase_installer_type == 'tar' else '' }}"
