@@ -1,0 +1,82 @@
+---
+# Prometheus alerting rules for OceanBase cluster monitoring.
+# Deployed to /etc/prometheus/rules/oceanbase-alerts.yml by the
+# prometheus_grafana role.  Prometheus reloads this file automatically
+# when the service restarts, or via: kill -HUP $(pidof prometheus)
+
+groups:
+  - name: oceanbase_cluster_alerts
+    rules:
+
+      # -------------------------------------------------------------------------
+      # Alert 7 - Node CPU high (>80 % for 5 minutes)
+      # Source: node_exporter (job: node-exporter)
+      # -------------------------------------------------------------------------
+      - alert: OceanBaseNodeCPUHigh
+        expr: >
+          (100 - (
+            avg by(instance) (
+              rate(node_cpu_seconds_total{mode="idle", job=~"node.*"}[2m])
+            ) * 100
+          )) > 80
+        for: 5m
+        labels:
+          severity: warning
+          alert_id: "7"
+          component: cpu
+        annotations:
+          summary: "CPU high on OceanBase observer {{ $labels.instance }}"
+          description: >
+            CPU usage on observer {{ $labels.instance }} has exceeded 80 % for
+            more than 5 minutes (current: {{ $value | printf "%.1f" }} %).
+            Check for abnormal workload or long-running queries.
+
+      # -------------------------------------------------------------------------
+      # Alert 8 - Tenant MemStore usage high (>75 %)
+      # Source: ob_agent oceanbase-exporter (job: oceanbase-exporter, port 9308)
+      # Metric: ob_memstore_percent  (0-100 gauge per svr_ip / tenant_name)
+      # -------------------------------------------------------------------------
+      - alert: OceanBaseTenantMemStoreHigh
+        expr: ob_memstore_percent{job=~"oceanbase.*"} > 75
+        for: 1m
+        labels:
+          severity: warning
+          alert_id: "8"
+          component: memstore
+        annotations:
+          summary: "MemStore usage high on {{ $labels.svr_ip }} (tenant: {{ $labels.tenant_name }})"
+          description: >
+            MemStore usage on {{ $labels.svr_ip }} for tenant
+            {{ $labels.tenant_name }} is {{ $value | printf "%.1f" }} %,
+            exceeding the 75 % warning threshold.
+            Risk of compaction storm if usage continues to rise.
+
+      # -------------------------------------------------------------------------
+      # Alert 1 - Log (redo) disk space pre-warning (>70 %)
+      # Source: node_exporter  (mountpoint: /oceanbase/redo)
+      # -------------------------------------------------------------------------
+      - alert: OceanBaseLogDiskSpaceWarning
+        expr: >
+          (1 - node_filesystem_avail_bytes{
+                 mountpoint="/oceanbase/redo",
+                 job=~"node.*",
+                 fstype!~"tmpfs|overlay|squashfs"
+               }
+               / node_filesystem_size_bytes{
+                 mountpoint="/oceanbase/redo",
+                 job=~"node.*",
+                 fstype!~"tmpfs|overlay|squashfs"
+               }
+          ) * 100 > 70
+        for: 2m
+        labels:
+          severity: warning
+          alert_id: "1"
+          component: log_disk
+        annotations:
+          summary: "OceanBase log disk usage high on {{ $labels.instance }}"
+          description: >
+            Log (redo) disk at /oceanbase/redo on {{ $labels.instance }} is
+            {{ $value | printf "%.1f" }} % full, exceeding the 70 % early-warning
+            threshold.  Reduce log_disk_size_gb or clean up archived logs before
+            the disk becomes full.

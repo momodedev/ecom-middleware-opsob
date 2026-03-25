@@ -71,8 +71,8 @@
   tags: prometheus
 
 - name: Deploy OceanBase alerting rules for Prometheus
-  ansible.builtin.template:
-    src: prometheus-alerts.yml.j2
+  ansible.builtin.copy:
+    src: oceanbase-alerts.yml
     dest: /etc/prometheus/rules/oceanbase-alerts.yml
     owner: prometheus
     group: prometheus
