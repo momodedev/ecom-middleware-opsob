@@ -57,6 +57,7 @@
   loop:
     - /etc/prometheus
     - /etc/prometheus/file_sd
+    - /etc/prometheus/rules
     - /var/lib/prometheus
   tags: prometheus
 
@@ -67,6 +68,16 @@
     owner: prometheus
     group: prometheus
     mode: '0644'
+  tags: prometheus
+
+- name: Deploy OceanBase alerting rules for Prometheus
+  ansible.builtin.template:
+    src: prometheus-alerts.yml.j2
+    dest: /etc/prometheus/rules/oceanbase-alerts.yml
+    owner: prometheus
+    group: prometheus
+    mode: '0644'
+  notify: reload prometheus
   tags: prometheus
 
 - name: Deploy Prometheus systemd service unit
@@ -187,6 +198,8 @@
     mode: '0644'
   loop:
     - node_exporter_dashboard.json
+    - oceanbase_cluster_dashboard.json
+  notify: restart grafana
   tags: grafana
 
 - name: Enable and start Grafana service

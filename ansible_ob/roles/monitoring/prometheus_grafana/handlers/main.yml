@@ -1,0 +1,14 @@
+---
+# Handlers for prometheus_grafana role
+
+- name: reload prometheus
+  ansible.builtin.systemd:
+    name: prometheus.service
+    state: reloaded
+  listen: reload prometheus
+
+- name: restart grafana
+  ansible.builtin.systemd:
+    name: grafana-server
+    state: restarted
+  listen: restart grafana
