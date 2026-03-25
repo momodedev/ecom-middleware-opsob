@@ -72,7 +72,7 @@ runcmd:
 
     find_unmounted_disk_by_target_size() {
       target_size_bytes="$1"
-      exclude_dev="${2:-}"
+      exclude_dev="$${2:-}"
 
       mounted_devs=$(lsblk -nrpo NAME,MOUNTPOINT | awk '$2!="" {print $1}')
       mounted_parents=$(for dev in $mounted_devs; do
