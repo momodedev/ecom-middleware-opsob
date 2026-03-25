@@ -44,6 +44,22 @@ runcmd:
   # Disable firewalld to ensure Prometheus/Grafana ports are accessible
   - systemctl disable firewalld
   - systemctl stop firewalld
+
+  # OS-level tuning for high concurrency and IO behavior
+  - |
+    cat > /etc/security/limits.d/99-oceanbase.conf << 'EOF'
+    * soft nofile 655360
+    * hard nofile 655360
+    EOF
+  - |
+    cat > /etc/sysctl.d/99-oceanbase.conf << 'EOF'
+    vm.swappiness = 0
+    vm.dirty_ratio = 60
+    vm.dirty_background_ratio = 30
+    net.core.somaxconn = 65535
+    net.ipv4.tcp_max_syn_backlog = 65535
+    EOF
+  - sysctl --system || true
   
   # Install Terraform from HashiCorp repo (Rocky Linux)
   - dnf install -y dnf-plugins-core

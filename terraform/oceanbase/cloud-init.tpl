@@ -159,45 +159,25 @@ EOF
   - chmod -R 755 /home/${oceanbase_admin_username}/ansible-venv
   - chown -R ${oceanbase_admin_username}:${oceanbase_admin_username} /home/${oceanbase_admin_username}/ansible-venv
   
-  # Set up system limits for OceanBase
+  # Set up file descriptor limits for OceanBase nodes (idempotent)
   - |
-    cat >> /etc/security/limits.conf << 'EOF'
-    *       soft    nofile   65536
-    *       hard    nofile   65536
-    *       soft    nproc    65536
-    *       hard    nproc    65536
-    oceanbase       soft    nofile   1048576
-    oceanbase       hard    nofile   1048576
-    oceanbase       soft    nproc    65536
-    oceanbase       hard    nproc    65536
+    cat > /etc/security/limits.d/99-oceanbase.conf << 'EOF'
+    * soft nofile 655360
+    * hard nofile 655360
     EOF
-  
-  # Configure kernel parameters for OceanBase performance
+
+  # Configure kernel parameters for OceanBase nodes (idempotent)
   - |
-    cat >> /etc/sysctl.conf << 'EOF'
-    # Network tuning
-    net.core.rmem_max = 134217728
-    net.core.wmem_max = 134217728
-    net.ipv4.tcp_rmem = 4096 87380 67108864
-    net.ipv4.tcp_wmem = 4096 65536 67108864
-    net.ipv4.tcp_max_syn_backlog = 1024
-    net.ipv4.ip_local_port_range = 1024 65535
-    net.core.netdev_max_backlog = 65536
-    net.ipv4.route.flush = 1
-    
-    # Memory tuning for OceanBase
-    vm.swappiness = 1
-    vm.dirty_ratio = 40
-    vm.dirty_background_ratio = 10
-    vm.overcommit_memory = 2
-    vm.overcommit_ratio = 80
-    
-    # File system tuning
-    fs.aio-max-nr = 3145728
-    fs.file-max = 6815744
+    cat > /etc/sysctl.d/99-oceanbase.conf << 'EOF'
+    vm.swappiness = 0
+    vm.dirty_ratio = 60
+    vm.dirty_background_ratio = 30
+    net.core.somaxconn = 65535
+    net.ipv4.tcp_max_syn_backlog = 65535
     EOF
-  # Apply sysctl but ignore missing parameters (some may not exist on all kernel versions)
-  - sysctl -p || true
+
+  # Apply all sysctl settings from /etc/sysctl.d and /etc/sysctl.conf
+  - sysctl --system || true
   
   # Disable transparent huge pages (THP) for OceanBase
   - |
