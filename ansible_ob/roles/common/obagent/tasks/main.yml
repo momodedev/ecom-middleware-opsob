@@ -66,7 +66,18 @@
   ansible.builtin.file:
     path: "{{ obagent_ctl_path }}"
     mode: '0755'
+    owner: admin
+    group: admin
     state: file
+  tags: obagent
+
+- name: Ensure obagent log directory exists with proper permissions
+  ansible.builtin.file:
+    path: "{{ obagent_home_dir }}/log"
+    state: directory
+    owner: admin
+    group: admin
+    mode: '0755'
   tags: obagent
 
 - name: Ensure obagent systemd service points to detected binary path
@@ -113,6 +124,12 @@
     path: "{{ obagent_home_dir }}/conf/config_properties/basic_auth.yaml"
     regexp: '(^\s*- key:\s*agent\.http\.basic\.auth\.metricAuthEnabled\s*\n\s*value:\s*)true'
     replace: '\1false'
+  tags: obagent
+
+- name: Read monagent_pipeline.yaml before modifications
+  ansible.builtin.slurp:
+    src: "{{ obagent_home_dir }}/conf/config_properties/monagent_pipeline.yaml"
+  register: monagent_original
   tags: obagent
 
 - name: Enable OceanBase metrics pipeline in obagent
@@ -162,6 +179,38 @@
     path: "{{ obagent_home_dir }}/conf/config_properties/monagent_pipeline.yaml"
     regexp: '(^\s*- key:\s*ob\.log\.path\s*\n\s*value:\s*).*$'
     replace: '\1/oceanbase/redo'
+  tags: obagent
+
+- name: Backup monagent_pipeline.yaml before syntax check
+  ansible.builtin.shell: |
+    set -euo pipefail
+    CONFIG_FILE="{{ obagent_home_dir }}/conf/config_properties/monagent_pipeline.yaml"
+    BACKUP_FILE="${CONFIG_FILE}.backup.$(date +%Y%m%d%H%M%S)"
+    cp "$CONFIG_FILE" "$BACKUP_FILE"
+    echo "Backup created: $BACKUP_FILE"
+  register: backup_result
+  changed_when: false
+  failed_when: false
+  tags: obagent
+
+- name: Validate monagent_pipeline.yaml YAML syntax
+  ansible.builtin.shell: |
+    set -o pipefail
+    if command -v python3 &> /dev/null; then
+      python3 -c "import yaml; yaml.safe_load(open('{{ obagent_home_dir }}/conf/config_properties/monagent_pipeline.yaml'))" 2>&1
+    else
+      echo "Python3 not available, skipping YAML validation"
+      exit 0
+    fi
+  register: yaml_validation
+  changed_when: false
+  failed_when: false
+  tags: obagent
+
+- name: Display YAML validation errors
+  ansible.builtin.debug:
+    msg: "YAML validation failed: {{ yaml_validation.stdout }}"
+  when: yaml_validation.rc != 0 and yaml_validation.stdout != ""
   tags: obagent
 
 - name: Reload systemd and start obagent
