@@ -25,11 +25,13 @@ groups:
           alert_id: "7"
           component: cpu
         annotations:
+{% raw %}
           summary: "CPU high on OceanBase observer {{ $labels.instance }}"
           description: >
             CPU usage on observer {{ $labels.instance }} has exceeded 80 % for
             more than 5 minutes (current: {{ $value | printf "%.1f" }} %).
             Check for abnormal workload or long-running queries.
+{% endraw %}
 
       # -------------------------------------------------------------------------
       # Alert 8 – Tenant MemStore usage high (>75 %)
@@ -44,12 +46,14 @@ groups:
           alert_id: "8"
           component: memstore
         annotations:
+{% raw %}
           summary: "MemStore usage high on {{ $labels.svr_ip }} (tenant: {{ $labels.tenant_name }})"
           description: >
             MemStore usage on {{ $labels.svr_ip }} for tenant
             {{ $labels.tenant_name }} is {{ $value | printf "%.1f" }} %,
             exceeding the 75 % warning threshold.
             Risk of compaction storm if usage continues to rise.
+{% endraw %}
 
       # -------------------------------------------------------------------------
       # Alert 1 – Log (redo) disk space pre-warning (>70 %)
@@ -74,9 +78,11 @@ groups:
           alert_id: "1"
           component: log_disk
         annotations:
+{% raw %}
           summary: "OceanBase log disk usage high on {{ $labels.instance }}"
           description: >
             Log (redo) disk at /oceanbase/redo on {{ $labels.instance }} is
             {{ $value | printf "%.1f" }} % full, exceeding the 70 % early-warning
             threshold.  Reduce log_disk_size_gb or clean up archived logs before
             the disk becomes full.
+{% endraw %}
