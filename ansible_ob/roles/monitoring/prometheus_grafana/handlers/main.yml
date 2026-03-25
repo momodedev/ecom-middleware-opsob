@@ -2,9 +2,12 @@
 # Handlers for prometheus_grafana role
 
 - name: reload prometheus
-  ansible.builtin.systemd:
-    name: prometheus.service
-    state: reloaded
+  ansible.builtin.shell: |
+    if systemctl -q is-active prometheus.service; then
+      kill -HUP $(systemctl show --property=MainPID --value prometheus.service)
+    else
+      systemctl restart prometheus.service
+    fi
   listen: reload prometheus
 
 - name: restart grafana
