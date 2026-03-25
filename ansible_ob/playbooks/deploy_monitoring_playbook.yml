@@ -47,7 +47,9 @@
   become: true
   vars:
     node_targets_path: "/etc/prometheus/file_sd/node_targets.json"
+    oceanbase_targets_path: "/etc/prometheus/file_sd/oceanbase_targets.json"
     node_exporter_port: 9100
+    prometheus_ob_exporter_port: 9308
   tasks:
     - name: Ensure Prometheus file_sd directory exists
       file:
@@ -63,3 +65,9 @@
       vars:
         target_ips: "{{ groups['oceanbase'] | map('extract', hostvars, 'ansible_host') | list }}"
         target_port: "{{ node_exporter_port }}"
+
+    - name: Render OceanBase exporter targets file
+      template:
+        src: ../roles/oceanbase/templates/prometheus_oceanbase_targets.json.j2
+        dest: "{{ oceanbase_targets_path }}"
+        mode: "0644"

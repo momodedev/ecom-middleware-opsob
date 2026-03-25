@@ -48,7 +48,7 @@
       },
       "targets": [
         {
-          "expr": "count(up{job=~\"oceanbase.*\"} == 1)",
+          "expr": "count(up{job=~\"node[-_]exporter\"} == 1)",
           "refId": "A"
         }
       ],
@@ -583,7 +583,7 @@
           "type": "prometheus",
           "uid": "Prometheus"
         },
-        "definition": "label_values(ob_memstore_percent, tenant_name)",
+        "definition": "label_values(ob_memstore_percent{job=~\"oceanbase.*\"}, tenant_name)",
         "hide": 0,
         "includeAll": true,
         "label": "Tenant",
@@ -591,7 +591,7 @@
         "name": "tenant",
         "options": [],
         "query": {
-          "query": "label_values(ob_memstore_percent, tenant_name)",
+          "query": "label_values(ob_memstore_percent{job=~\"oceanbase.*\"}, tenant_name)",
           "refId": "Prometheus-tenant-Variable-Query"
         },
         "refresh": 2,
