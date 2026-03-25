@@ -841,16 +841,41 @@
 
 - name: Trigger OceanBase leader rebalance
   shell: |
-    set -euo pipefail
-    SQL="ALTER SYSTEM BALANCE LEADER;"
+    set -uo pipefail
 
-    if [ "{{ oceanbase_sql_client_cmd | default('') }}" = "obclient" ]; then
-      obclient -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -e "$SQL"
-    elif [ "{{ oceanbase_sql_client_cmd | default('') }}" = "mysql" ]; then
-      mysql -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -e "$SQL"
-    else
-      echo "Neither obclient nor mysql client is available" >&2
-      exit 1
+    run_sql() {
+      stmt="$1"
+      if [ "{{ oceanbase_sql_client_cmd | default('') }}" = "obclient" ]; then
+        obclient -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -e "$stmt"
+      elif [ "{{ oceanbase_sql_client_cmd | default('') }}" = "mysql" ]; then
+        mysql -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -e "$stmt"
+      else
+        return 127
+      fi
+    }
+
+    CANDIDATES=(
+      "ALTER SYSTEM BALANCE LEADER;"
+      "ALTER SYSTEM SWITCH REPLICA LEADER TENANT = ALL;"
+      "ALTER SYSTEM SWITCH REPLICA LEADER;"
+    )
+
+    success=0
+    last_rc=1
+    for sql in "$${CANDIDATES[@]}"; do
+      if run_sql "$sql"; then
+        echo "Leader rebalance command accepted: $sql"
+        success=1
+        break
+      else
+        last_rc=$?
+        echo "Leader rebalance command not accepted: $sql" >&2
+      fi
+    done
+
+    if [ "$success" -eq 0 ]; then
+      echo "No compatible leader rebalance SQL accepted by current OceanBase version." >&2
+      exit "$last_rc"
     fi
   args:
     executable: /bin/bash
@@ -859,10 +884,21 @@
   become_user: "{{ oceanbase_admin_user }}"
   register: oceanbase_balance_leader_result
   changed_when: true
+  failed_when: "(oceanbase_balance_leader_result.rc | default(0)) != 0 and (oceanbase_optimize_balance_leader_strict | bool)"
   when:
     - oceanbase_optimize_after_start | bool
     - oceanbase_optimize_balance_leader | bool
     - (oceanbase_sql_client_cmd | default('') | length) > 0
+
+- name: Show leader rebalance execution output
+  debug:
+    msg:
+      - "leader_rebalance_rc={{ oceanbase_balance_leader_result.rc | default('n/a') }}"
+      - "stdout={{ oceanbase_balance_leader_result.stdout | default('') }}"
+      - "stderr={{ oceanbase_balance_leader_result.stderr | default('') }}"
+  run_once: true
+  when:
+    - oceanbase_balance_leader_result is defined
 
 - name: Query OceanBase balance task progress
   shell: |

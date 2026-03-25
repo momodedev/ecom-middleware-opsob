@@ -70,3 +70,4 @@ oceanbase_optimize_skip_when_no_sql_client: true
 oceanbase_optimize_balance_leader: true
 oceanbase_optimize_show_balance_tasks: true
 oceanbase_optimize_verify_leader_distribution: true
+oceanbase_optimize_balance_leader_strict: false
