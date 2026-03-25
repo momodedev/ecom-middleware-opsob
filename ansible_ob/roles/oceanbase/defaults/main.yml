@@ -16,7 +16,7 @@ oceanbase_disk_auto_detect_by_size: true
 # Storage sizing when data disk is mounted.
 oceanbase_datafile_size_gb: 166
 oceanbase_datafile_maxsize_gb: 200
-oceanbase_log_disk_size_gb: 200
+oceanbase_log_disk_size_gb: 190
 # Storage sizing fallback when data/log are placed on root disk (skip_data_mount=true).
 oceanbase_datafile_size_gb_no_data_disk: 40
 oceanbase_datafile_maxsize_gb_no_data_disk: 60

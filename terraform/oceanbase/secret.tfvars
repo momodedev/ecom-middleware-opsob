@@ -14,7 +14,7 @@ oceanbase_redo_disk_size_gb = 200
 # OceanBase Database Parameters
 oceanbase_cluster_name      = "ob_cluster"
 oceanbase_root_password     = "OceanBase#!123"
-oceanbase_memory_limit      = "32G"
+oceanbase_memory_limit      = "26G"
 oceanbase_cpu_count         = 8     # Match D8s_v6 (8 vCPUs)
 
 # Network Configuration
