@@ -66,9 +66,23 @@
   ansible.builtin.file:
     path: "{{ obagent_ctl_path }}"
     mode: '0755'
-    owner: admin
-    group: admin
     state: file
+  tags: obagent
+
+- name: Force set ob_agentctl ownership to admin
+  ansible.builtin.command:
+    cmd: "chown admin:admin {{ obagent_ctl_path }}"
+    creates: "/tmp/obagent_ownership_set_{{ obagent_ctl_path | hash('md5') }}"
+  register: ownership_result
+  changed_when: ownership_result.rc == 0
+  tags: obagent
+
+- name: Mark ob_agentctl ownership as complete
+  ansible.builtin.file:
+    path: "/tmp/obagent_ownership_set_{{ obagent_ctl_path | hash('md5') }}"
+    state: touch
+    mode: '0644'
+  when: ownership_result.rc == 0
   tags: obagent
 
 - name: Ensure obagent log directory exists with proper permissions
@@ -204,6 +218,23 @@
     fi
   register: yaml_validation
   changed_when: false
+  failed_when: false
+  tags: obagent
+
+- name: Restore monagent_pipeline.yaml from backup if invalid
+  ansible.builtin.shell: |
+    set -euo pipefail
+    BACKUP_FILE=$(ls -t {{ obagent_home_dir }}/conf/config_properties/monagent_pipeline.yaml.backup.* 2>/dev/null | head -n1)
+    if [ -n "$BACKUP_FILE" ]; then
+      cp "$BACKUP_FILE" "{{ obagent_home_dir }}/conf/config_properties/monagent_pipeline.yaml"
+      echo "Restored from backup: $BACKUP_FILE"
+    else
+      echo "No backup found, cannot restore"
+      exit 1
+    fi
+  when: yaml_validation.rc != 0 and yaml_validation.stdout != ""
+  register: restore_result
+  changed_when: "'Restored' in restore_result.stdout"
   failed_when: false
   tags: obagent
 
