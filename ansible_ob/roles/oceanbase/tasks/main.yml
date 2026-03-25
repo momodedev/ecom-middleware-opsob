@@ -838,3 +838,94 @@
     - oceanbase_optimize_after_start | bool
     - oceanbase_optimize_set_system_memory | bool
     - (oceanbase_sql_client_cmd | default('') | length) > 0
+
+- name: Trigger OceanBase leader rebalance
+  shell: |
+    set -euo pipefail
+    SQL="ALTER SYSTEM BALANCE LEADER;"
+
+    if [ "{{ oceanbase_sql_client_cmd | default('') }}" = "obclient" ]; then
+      obclient -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -e "$SQL"
+    elif [ "{{ oceanbase_sql_client_cmd | default('') }}" = "mysql" ]; then
+      mysql -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -e "$SQL"
+    else
+      echo "Neither obclient nor mysql client is available" >&2
+      exit 1
+    fi
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become_user: "{{ oceanbase_admin_user }}"
+  register: oceanbase_balance_leader_result
+  changed_when: true
+  when:
+    - oceanbase_optimize_after_start | bool
+    - oceanbase_optimize_balance_leader | bool
+    - (oceanbase_sql_client_cmd | default('') | length) > 0
+
+- name: Query OceanBase balance task progress
+  shell: |
+    set -euo pipefail
+    SQL="SELECT * FROM oceanbase.__all_virtual_balance_task;"
+
+    if [ "{{ oceanbase_sql_client_cmd | default('') }}" = "obclient" ]; then
+      obclient -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -A -e "$SQL"
+    elif [ "{{ oceanbase_sql_client_cmd | default('') }}" = "mysql" ]; then
+      mysql -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -e "$SQL"
+    else
+      echo "Neither obclient nor mysql client is available" >&2
+      exit 1
+    fi
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become_user: "{{ oceanbase_admin_user }}"
+  register: oceanbase_balance_task_result
+  changed_when: false
+  when:
+    - oceanbase_optimize_after_start | bool
+    - oceanbase_optimize_show_balance_tasks | bool
+    - (oceanbase_sql_client_cmd | default('') | length) > 0
+
+- name: Show OceanBase balance task progress
+  debug:
+    var: oceanbase_balance_task_result.stdout
+  run_once: true
+  when:
+    - oceanbase_balance_task_result is defined
+    - oceanbase_balance_task_result.stdout is defined
+
+- name: Query OceanBase leader distribution by server
+  shell: |
+    set -euo pipefail
+    SQL="SELECT svr_ip, COUNT(*) AS leader_count FROM oceanbase.__all_meta_table WHERE role = 1 GROUP BY svr_ip ORDER BY svr_ip;"
+
+    if [ "{{ oceanbase_sql_client_cmd | default('') }}" = "obclient" ]; then
+      obclient -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -A -e "$SQL"
+    elif [ "{{ oceanbase_sql_client_cmd | default('') }}" = "mysql" ]; then
+      mysql -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -e "$SQL"
+    else
+      echo "Neither obclient nor mysql client is available" >&2
+      exit 1
+    fi
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become_user: "{{ oceanbase_admin_user }}"
+  register: oceanbase_leader_distribution_result
+  changed_when: false
+  when:
+    - oceanbase_optimize_after_start | bool
+    - oceanbase_optimize_verify_leader_distribution | bool
+    - (oceanbase_sql_client_cmd | default('') | length) > 0
+
+- name: Show OceanBase leader distribution
+  debug:
+    var: oceanbase_leader_distribution_result.stdout
+  run_once: true
+  when:
+    - oceanbase_leader_distribution_result is defined
+    - oceanbase_leader_distribution_result.stdout is defined

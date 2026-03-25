@@ -67,3 +67,6 @@ oceanbase_optimize_set_system_memory: true
 oceanbase_optimize_system_memory: "4G"
 oceanbase_optimize_fail_if_tenant_missing: false
 oceanbase_optimize_skip_when_no_sql_client: true
+oceanbase_optimize_balance_leader: true
+oceanbase_optimize_show_balance_tasks: true
+oceanbase_optimize_verify_leader_distribution: true
