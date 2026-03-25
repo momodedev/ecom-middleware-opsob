@@ -152,44 +152,52 @@
     - oceanbase_disk_auto_detect_by_size | bool
     - (oceanbase_data_disk_device | length == 0) or (oceanbase_redo_disk_device | length == 0)
 
-- name: Resolve data and redo disk devices
+- name: Set expected disk sizes in bytes
+  set_fact:
+    oceanbase_data_disk_size_bytes: "{{ (oceanbase_data_disk_size_gb | int) * 1073741824 }}"
+    oceanbase_redo_disk_size_bytes: "{{ (oceanbase_redo_disk_size_gb | int) * 1073741824 }}"
+  when: not (oceanbase_skip_data_mount | bool)
+
+- name: Resolve data disk device
   set_fact:
     oceanbase_data_disk_device_resolved: >-
       {{
         oceanbase_data_disk_device
         if (oceanbase_data_disk_device | length > 0)
         else (
-          (oceanbase_candidate_disks.stdout_lines | default([])
-          | select('search', ' ' ~ ((oceanbase_data_disk_size_gb | int) * 1073741824) | string ~ '$')
+          oceanbase_candidate_disks.stdout_lines | default([])
+          | select('search', ' ' ~ (oceanbase_data_disk_size_bytes | string) ~ '$')
           | map('regex_replace', '^(\\S+)\\s+.*$', '\\1')
           | list
           | first
-          | default(''))
+          | default('')
         )
       }}
+  when: not (oceanbase_skip_data_mount | bool)
+
+- name: Build remaining disk candidates excluding resolved data disk
+  set_fact:
+    oceanbase_candidate_disks_remaining: >-
+      {{
+        oceanbase_candidate_disks.stdout_lines | default([])
+        | reject('search', '^' ~ (oceanbase_data_disk_device_resolved | default('')) ~ '\\s')
+        | list
+      }}
+  when: not (oceanbase_skip_data_mount | bool)
+
+- name: Resolve redo disk device
+  set_fact:
     oceanbase_redo_disk_device_resolved: >-
       {{
         oceanbase_redo_disk_device
         if (oceanbase_redo_disk_device | length > 0)
         else (
-          (oceanbase_candidate_disks.stdout_lines | default([])
-          | reject('search', '^' ~ (
-              oceanbase_data_disk_device
-              if (oceanbase_data_disk_device | length > 0)
-              else (
-                (oceanbase_candidate_disks.stdout_lines | default([])
-                | select('search', ' ' ~ ((oceanbase_data_disk_size_gb | int) * 1073741824) | string ~ '$')
-                | map('regex_replace', '^(\\S+)\\s+.*$', '\\1')
-                | list
-                | first
-                | default('')
-              )
-            ) ~ '\\s')
-          | select('search', ' ' ~ ((oceanbase_redo_disk_size_gb | int) * 1073741824) | string ~ '$')
+          oceanbase_candidate_disks_remaining | default([])
+          | select('search', ' ' ~ (oceanbase_redo_disk_size_bytes | string) ~ '$')
           | map('regex_replace', '^(\\S+)\\s+.*$', '\\1')
           | list
           | first
-          | default(''))
+          | default('')
         )
       }}
   when: not (oceanbase_skip_data_mount | bool)
