@@ -197,7 +197,7 @@ EOF
   # Log cloud-init completion
   - echo "Cloud-init bootstrap completed at $(date)" > /var/log/oceanbase-bootstrap-complete.log
 
-  # Upgrade/sync OS packages to Rocky Linux 9.7 baseline using a strict dnf workflow
+  # Upgrade Rocky Linux to latest 9.x (targeting 9.7), following control-node workflow first
   - |
     set -euxo pipefail
 
@@ -205,23 +205,28 @@ EOF
     dnf -y install rocky-gpg-keys rocky-repos rocky-release dnf-plugins-core || true
     dnf -y upgrade rocky-gpg-keys rocky-repos rocky-release --refresh || true
 
-    # Primary 9.7 transition path.
-    dnf -y --releasever=9.7 distro-sync --allowerasing --refresh || \
-    dnf -y --releasever=9.7 upgrade --allowerasing --refresh || \
-    dnf -y --releasever=9.7 upgrade --refresh
+    # Match control-node behavior first: generic full system upgrade.
+    dnf -y upgrade --refresh || true
 
     version_id=$(awk -F= '/^VERSION_ID=/{gsub(/"/,"",$2); print $2}' /etc/os-release)
     release_pkg=$(rpm -q rocky-release 2>/dev/null || echo "rocky-release-not-installed")
     echo "VERSION_ID=$version_id" | tee /var/log/rocky-version-after-bootstrap.log
     echo "$release_pkg" | tee -a /var/log/rocky-version-after-bootstrap.log
 
-    # Retry once after cache cleanup if the first transition did not reach 9.7.
+    # If still not 9.7, force the transition with releasever and distro-sync fallback.
     if ! echo "$version_id" | grep -Eq '^9\\.7([.].*)?$'; then
+      dnf -y --releasever=9.7 distro-sync --allowerasing --refresh || \
+      dnf -y --releasever=9.7 upgrade --allowerasing --refresh || \
+      dnf -y --releasever=9.7 upgrade --refresh || true
+
       dnf clean all || true
       rm -rf /var/cache/dnf || true
       dnf -y --releasever=9.7 distro-sync --allowerasing --refresh || true
+
       version_id=$(awk -F= '/^VERSION_ID=/{gsub(/"/,"",$2); print $2}' /etc/os-release)
+      release_pkg=$(rpm -q rocky-release 2>/dev/null || echo "rocky-release-not-installed")
       echo "VERSION_ID(retry)=$version_id" | tee -a /var/log/rocky-version-after-bootstrap.log
+      echo "rocky-release(retry)=$release_pkg" | tee -a /var/log/rocky-version-after-bootstrap.log
     fi
 
     if echo "$version_id" | grep -Eq '^9\\.7([.].*)?$'; then
