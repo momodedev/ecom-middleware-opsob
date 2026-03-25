@@ -648,3 +648,108 @@
   become: false
   loop: "{{ groups['oceanbase'] }}"
   run_once: true
+
+- name: Resolve tenant resource unit name from metadata
+  shell: |
+    set -euo pipefail
+
+    if [ -n "{{ oceanbase_optimize_unit_config_name | default('') }}" ]; then
+      echo "{{ oceanbase_optimize_unit_config_name }}"
+      exit 0
+    fi
+
+    SQL="SELECT uc.name
+    FROM oceanbase.__all_resource_pool rp
+    JOIN oceanbase.__all_unit_config uc ON rp.unit_config_id = uc.unit_config_id
+    JOIN oceanbase.__all_tenant t ON rp.tenant_id = t.tenant_id
+    WHERE t.tenant_name='{{ oceanbase_optimize_tenant_name }}'
+    LIMIT 1;"
+
+    if command -v obclient >/dev/null 2>&1; then
+      obclient -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -N -e "$SQL" | awk 'NF {print $1; exit}'
+    elif command -v mysql >/dev/null 2>&1; then
+      mysql -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -N -e "$SQL" | awk 'NF {print $1; exit}'
+    else
+      echo ""
+    fi
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become_user: "{{ oceanbase_admin_user }}"
+  register: oceanbase_detected_unit_config
+  changed_when: false
+  failed_when: false
+  when:
+    - oceanbase_optimize_after_start | bool
+
+- name: Set resolved resource unit name fact
+  set_fact:
+    oceanbase_optimize_unit_config_name_resolved: "{{ oceanbase_detected_unit_config.stdout | default('') | trim }}"
+  run_once: true
+  when:
+    - oceanbase_optimize_after_start | bool
+
+- name: Show resolved resource unit name
+  debug:
+    msg: "tenant={{ oceanbase_optimize_tenant_name }}, unit_config={{ oceanbase_optimize_unit_config_name_resolved | default('') }}"
+  run_once: true
+  when:
+    - oceanbase_optimize_after_start | bool
+
+- name: Fail when target tenant resource unit cannot be resolved
+  fail:
+    msg: "Cannot resolve unit config for tenant {{ oceanbase_optimize_tenant_name }}. Set oceanbase_optimize_unit_config_name explicitly or create tenant first."
+  run_once: true
+  when:
+    - oceanbase_optimize_after_start | bool
+    - oceanbase_optimize_fail_if_tenant_missing | bool
+    - (oceanbase_optimize_unit_config_name_resolved | default('') | length) == 0
+
+- name: Set tenant resource unit memory size
+  shell: |
+    set -euo pipefail
+    SQL="ALTER RESOURCE UNIT {{ oceanbase_optimize_unit_config_name_resolved }} MEMORY_SIZE='{{ oceanbase_optimize_tenant_memory_size }}';"
+
+    if command -v obclient >/dev/null 2>&1; then
+      obclient -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -e "$SQL"
+    elif command -v mysql >/dev/null 2>&1; then
+      mysql -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -e "$SQL"
+    else
+      echo "Neither obclient nor mysql client is available" >&2
+      exit 1
+    fi
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become_user: "{{ oceanbase_admin_user }}"
+  register: oceanbase_set_tenant_memory_result
+  changed_when: true
+  when:
+    - oceanbase_optimize_after_start | bool
+    - (oceanbase_optimize_unit_config_name_resolved | default('') | length) > 0
+
+- name: Set OceanBase system memory
+  shell: |
+    set -euo pipefail
+    SQL="ALTER SYSTEM SET system_memory='{{ oceanbase_optimize_system_memory }}';"
+
+    if command -v obclient >/dev/null 2>&1; then
+      obclient -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -e "$SQL"
+    elif command -v mysql >/dev/null 2>&1; then
+      mysql -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -e "$SQL"
+    else
+      echo "Neither obclient nor mysql client is available" >&2
+      exit 1
+    fi
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become_user: "{{ oceanbase_admin_user }}"
+  register: oceanbase_set_system_memory_result
+  changed_when: true
+  when:
+    - oceanbase_optimize_after_start | bool
+    - oceanbase_optimize_set_system_memory | bool
