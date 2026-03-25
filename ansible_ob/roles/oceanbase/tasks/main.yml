@@ -859,6 +859,8 @@
       "ALTER SYSTEM BALANCE LEADER TENANT = ALL;"
       "ALTER SYSTEM REBALANCE UNIT;"
       "ALTER SYSTEM REBALANCE UNIT FOR '{{ oceanbase_optimize_tenant_name }}';"
+      "ALTER SYSTEM START BALANCE LEADER;"
+      "ALTER SYSTEM START BALANCE LEADER FOR TENANT = '{{ oceanbase_optimize_tenant_name }}';"
     )
 
     success=0

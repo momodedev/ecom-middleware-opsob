@@ -9,7 +9,7 @@ resource_group_location   = "westus"
 oceanbase_instance_count    = 3  # Recommended: 3 nodes for high availability
 oceanbase_vm_size           = "Standard_D8s_v6"  # Updated to v6 for latest generation
 oceanbase_data_disk_size_gb = 500
-oceanbase_redo_disk_size_gb = 200
+oceanbase_redo_disk_size_gb = 500
 
 # OceanBase Database Parameters
 oceanbase_cluster_name      = "ob_cluster"

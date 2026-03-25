@@ -105,7 +105,7 @@ resource_group_location   = "westus"
 oceanbase_instance_count    = 3  # 建议 3 节点实现高可用
 oceanbase_vm_size           = "Standard_D8s_v5"
 oceanbase_data_disk_size_gb = 500
-oceanbase_redo_disk_size_gb = 200
+oceanbase_redo_disk_size_gb = 500
 
 # OceanBase 参数
 oceanbase_cluster_name      = "ob_cluster"
