@@ -21,7 +21,8 @@
 # See the README in this directory for more details.
 
 - name: Deploy Prometheus and Grafana to the management node
-  hosts: management_node
+  hosts: localhost
+  connection: local
   become: true
   vars:
     # Versions of the monitoring components. Adjust as necessary.
@@ -32,7 +33,7 @@
     - role: ../roles/monitoring/prometheus_grafana
 
 - name: Install node exporter on all OceanBase observers
-  hosts: oceanbase_observer
+  hosts: oceanbase
   become: true
   vars:
     node_exporter_version: "1.7.0"
@@ -60,5 +61,5 @@
         dest: "{{ node_targets_path }}"
         mode: "0644"
       vars:
-        target_ips: "{{ groups['oceanbase_observer'] | map('extract', hostvars, 'ansible_host') | list }}"
+        target_ips: "{{ groups['oceanbase'] | map('extract', hostvars, 'ansible_host') | list }}"
         target_port: "{{ node_exporter_port }}"
