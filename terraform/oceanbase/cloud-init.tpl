@@ -197,26 +197,38 @@ EOF
   # Log cloud-init completion
   - echo "Cloud-init bootstrap completed at $(date)" > /var/log/oceanbase-bootstrap-complete.log
 
-  # Upgrade/sync OS packages to Rocky Linux 9.7 baseline with safe fallback
+  # Upgrade/sync OS packages to Rocky Linux 9.7 baseline using a strict dnf workflow
   - |
     set -euxo pipefail
 
-    # Ensure release metadata is current before attempting a minor release jump.
-    dnf -y install rocky-release || true
+    # Ensure release metadata and repo definitions are up to date first.
+    dnf -y install rocky-gpg-keys rocky-repos rocky-release dnf-plugins-core || true
+    dnf -y upgrade rocky-gpg-keys rocky-repos rocky-release --refresh || true
 
-    dnf -y --releasever=9.7 distro-sync --refresh || \
-    dnf -y --releasever=9.7 upgrade --refresh || \
-    dnf -y upgrade --refresh
+    # Primary 9.7 transition path.
+    dnf -y --releasever=9.7 distro-sync --allowerasing --refresh || \
+    dnf -y --releasever=9.7 upgrade --allowerasing --refresh || \
+    dnf -y --releasever=9.7 upgrade --refresh
 
     version_id=$(awk -F= '/^VERSION_ID=/{gsub(/"/,"",$2); print $2}' /etc/os-release)
     release_pkg=$(rpm -q rocky-release 2>/dev/null || echo "rocky-release-not-installed")
     echo "VERSION_ID=$version_id" | tee /var/log/rocky-version-after-bootstrap.log
     echo "$release_pkg" | tee -a /var/log/rocky-version-after-bootstrap.log
 
+    # Retry once after cache cleanup if the first transition did not reach 9.7.
+    if ! echo "$version_id" | grep -Eq '^9\\.7([.].*)?$'; then
+      dnf clean all || true
+      rm -rf /var/cache/dnf || true
+      dnf -y --releasever=9.7 distro-sync --allowerasing --refresh || true
+      version_id=$(awk -F= '/^VERSION_ID=/{gsub(/"/,"",$2); print $2}' /etc/os-release)
+      echo "VERSION_ID(retry)=$version_id" | tee -a /var/log/rocky-version-after-bootstrap.log
+    fi
+
     if echo "$version_id" | grep -Eq '^9\\.7([.].*)?$'; then
-      echo "Rocky Linux baseline is now $version_id"
+      echo "Rocky Linux baseline is now $version_id" | tee -a /var/log/rocky-version-after-bootstrap.log
     else
-      echo "WARNING: Expected Rocky Linux 9.7 but found VERSION_ID=$version_id" | tee /var/log/rocky97-warning.log
+      echo "ERROR: Expected Rocky Linux 9.7 but found VERSION_ID=$version_id" | tee /var/log/rocky97-warning.log
+      exit 1
     fi
 
     dnf clean all || true
