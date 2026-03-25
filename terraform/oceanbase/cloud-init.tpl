@@ -46,116 +46,111 @@ runcmd:
 
   # Update package cache
   - dnf makecache || true
+
+  # Create oceanadmin group/user early so mounted directories can be owned correctly
+  - groupadd -f ${oceanbase_admin_username} || true
+  - id -u ${oceanbase_admin_username} >/dev/null 2>&1 || useradd -m -g ${oceanbase_admin_username} -s /bin/bash ${oceanbase_admin_username} || true
   
   # Create required directories with proper ownership
-  - mkdir -p /data/oceanbase
-  - mkdir -p /data/oceanbase/observer
-  - mkdir -p /data/oceanbase/clog
-  - mkdir -p /data/oceanbase/slog
+  - mkdir -p /oceanbase
+  - mkdir -p /oceanbase/data
+  - mkdir -p /oceanbase/redo
+  - mkdir -p /oceanbase/server
   - mkdir -p /var/log/oceanbase
   - mkdir -p /home/${oceanbase_admin_username}/.ssh
   
   # Set up SSH directory permissions
   - chmod 700 /home/${oceanbase_admin_username}/.ssh
   
-  # Create oceanbase user and group early (Ansible will reuse)
+  # Create oceanbase user/group early (Ansible will reuse)
   - groupadd -f oceanbase || true
-  - useradd -r -g oceanbase -s /bin/bash oceanbase || true
+  - id -u oceanbase >/dev/null 2>&1 || useradd -r -g oceanbase -s /bin/bash oceanbase || true
   
-  # Create oceanadmin user if different from oceanbase
-  - if [ "${oceanbase_admin_username}" != "oceanbase" ]; then
-      groupadd -f ${oceanbase_admin_username} || true
-      useradd -r -g ${oceanbase_admin_username} -s /bin/bash ${oceanbase_admin_username} || true
-      chmod 700 /home/${oceanbase_admin_username}/.ssh
-    fi
-  
-  # Format and mount data disk if attached (Supports SCSI and NVMe/PV2)
+  # Format and mount OceanBase data and redo disks (supports Azure SCSI and NVMe/PremiumV2)
   - |
+    set -euxo pipefail
+
+    find_unmounted_disk_by_target_size() {
+      target_size_bytes="$1"
+      exclude_dev="${2:-}"
+
+      mounted_devs=$(lsblk -nrpo NAME,MOUNTPOINT | awk '$2!="" {print $1}')
+      mounted_parents=$(for dev in $mounted_devs; do
+        parent=$(lsblk -ndo PKNAME "$dev" 2>/dev/null || true)
+        if [ -n "$parent" ]; then
+          echo "/dev/$parent"
+        fi
+      done | sort -u)
+
+      best_dev=""
+      best_diff=""
+
+      while read -r dev size type; do
+        [ "$type" = "disk" ] || continue
+        [ "$dev" = "$exclude_dev" ] && continue
+        if echo "$mounted_parents" | grep -qx "$dev"; then
+          continue
+        fi
+
+        diff=$(( size > target_size_bytes ? size - target_size_bytes : target_size_bytes - size ))
+        if [ -z "$best_diff" ] || [ "$diff" -lt "$best_diff" ]; then
+          best_diff="$diff"
+          best_dev="$dev"
+        fi
+      done <<EOF
+$(lsblk -dnbo PATH,SIZE,TYPE)
+EOF
+
+      echo "$best_dev"
+    }
+
+    ensure_mount() {
+      device="$1"
+      mount_point="$2"
+      owner="$3"
+
+      [ -n "$device" ] || return 1
+      mkdir -p "$mount_point"
+
+      if ! blkid "$device" >/dev/null 2>&1; then
+        mkfs.xfs -f "$device"
+      fi
+
+      if ! mountpoint -q "$mount_point"; then
+        mount "$device" "$mount_point"
+      fi
+
+      uuid=$(blkid -s UUID -o value "$device")
+      if [ -n "$uuid" ] && ! grep -q "$uuid" /etc/fstab; then
+        echo "UUID=$uuid $mount_point xfs defaults,nofail 0 2" >> /etc/fstab
+      fi
+
+      chmod 755 "$mount_point"
+      chown "$owner:$owner" "$mount_point"
+    }
+
     DATA_DISK_DEVICE=""
-    # Check LUN 0 (Standard Azure)
-    if [ -e "/dev/disk/azure/scsi1/lun0" ]; then
-      DATA_DISK_DEVICE=$(readlink -f /dev/disk/azure/scsi1/lun0)
-    elif [ -b "/dev/sdc" ]; then
-      DATA_DISK_DEVICE="/dev/sdc"
-    else
-      # Search for NVMe (Premium V2) - Find first unmounted NVMe disk
-      for dev in /dev/nvme*n1; do
-        if [ -b "$dev" ]; then
-           # Check if device or its partitions are mounted
-           if ! lsblk "$dev" -n -o MOUNTPOINT | grep -q "."; then
-             DATA_DISK_DEVICE=$dev
-             break
-           fi
-        fi
-      done
-    fi
-
-    if [ -n "$DATA_DISK_DEVICE" ]; then
-      if ! mountpoint -q /data/oceanbase; then
-        echo "Formatting and mounting data disk: $DATA_DISK_DEVICE"
-        mkfs.ext4 -F "$DATA_DISK_DEVICE" 2>/dev/null || true
-        mount "$DATA_DISK_DEVICE" /data/oceanbase 2>/dev/null || true
-        
-        # Add to fstab using UUID
-        UUID=$(blkid -s UUID -o value "$DATA_DISK_DEVICE")
-        if [ -n "$UUID" ]; then
-           if ! grep -q "$UUID" /etc/fstab; then
-             echo "UUID=$UUID /data/oceanbase ext4 defaults,nofail 0 2" >> /etc/fstab
-           fi
-        else
-           if ! grep -q "$DATA_DISK_DEVICE" /etc/fstab; then
-             echo "$DATA_DISK_DEVICE /data/oceanbase ext4 defaults,nofail 0 2" >> /etc/fstab
-           fi
-        fi
-        chmod 755 /data/oceanbase
-        chown oceanbase:oceanbase /data/oceanbase
-        chown oceanbase:oceanbase /data/oceanbase/observer
-        chown oceanbase:oceanbase /data/oceanbase/slog
-      fi
-    fi
-  
-  # Format and mount redo log disk if attached
-  - |
     REDO_DISK_DEVICE=""
-    # Check LUN 1 (Standard Azure)
-    if [ -e "/dev/disk/azure/scsi1/lun1" ]; then
-      REDO_DISK_DEVICE=$(readlink -f /dev/disk/azure/scsi1/lun1)
-    elif [ -b "/dev/sdd" ]; then
-      REDO_DISK_DEVICE="/dev/sdd"
-    else
-      # Search for second NVMe disk
-      nvme_count=0
-      for dev in /dev/nvme*n1; do
-        if [ -b "$dev" ]; then
-          nvme_count=$((nvme_count + 1))
-          if [ $nvme_count -eq 2 ] && ! lsblk "$dev" -n -o MOUNTPOINT | grep -q "."; then
-            REDO_DISK_DEVICE=$dev
-            break
-          fi
-        fi
-      done
+
+    if [ -e "/dev/disk/azure/data/by-lun/10" ]; then
+      DATA_DISK_DEVICE=$(readlink -f /dev/disk/azure/data/by-lun/10)
+    fi
+    if [ -e "/dev/disk/azure/data/by-lun/11" ]; then
+      REDO_DISK_DEVICE=$(readlink -f /dev/disk/azure/data/by-lun/11)
     fi
 
-    if [ -n "$REDO_DISK_DEVICE" ]; then
-      if ! mountpoint -q /data/oceanbase/clog; then
-        echo "Formatting and mounting redo log disk: $REDO_DISK_DEVICE"
-        mkfs.ext4 -F "$REDO_DISK_DEVICE" 2>/dev/null || true
-        mount "$REDO_DISK_DEVICE" /data/oceanbase/clog 2>/dev/null || true
-        
-        # Add to fstab using UUID
-        UUID=$(blkid -s UUID -o value "$REDO_DISK_DEVICE")
-        if [ -n "$UUID" ]; then
-           if ! grep -q "$UUID" /etc/fstab; then
-             echo "UUID=$UUID /data/oceanbase/clog ext4 defaults,nofail 0 2" >> /etc/fstab
-           fi
-        else
-           if ! grep -q "$REDO_DISK_DEVICE" /etc/fstab; then
-             echo "$REDO_DISK_DEVICE /data/oceanbase/clog ext4 defaults,nofail 0 2" >> /etc/fstab
-           fi
-        fi
-        chown oceanbase:oceanbase /data/oceanbase/clog
-      fi
+    if [ -z "$DATA_DISK_DEVICE" ]; then
+      DATA_DISK_DEVICE=$(find_unmounted_disk_by_target_size "$(( ${oceanbase_data_disk_size_gb} * 1024 * 1024 * 1024 ))")
     fi
+    if [ -z "$REDO_DISK_DEVICE" ]; then
+      REDO_DISK_DEVICE=$(find_unmounted_disk_by_target_size "$(( ${oceanbase_redo_disk_size_gb} * 1024 * 1024 * 1024 ))" "$DATA_DISK_DEVICE")
+    fi
+
+    echo "Resolved OceanBase cloud-init disks: data=$DATA_DISK_DEVICE redo=$REDO_DISK_DEVICE"
+
+    ensure_mount "$DATA_DISK_DEVICE" /oceanbase/data ${oceanbase_admin_username}
+    ensure_mount "$REDO_DISK_DEVICE" /oceanbase/redo ${oceanbase_admin_username}
+    chown ${oceanbase_admin_username}:${oceanbase_admin_username} /oceanbase /oceanbase/server || true
   
   # Set up Python environment for Ansible
   - python3 -m venv /home/${oceanbase_admin_username}/ansible-venv || true
