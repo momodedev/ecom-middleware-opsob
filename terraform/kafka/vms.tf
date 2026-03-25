@@ -108,7 +108,7 @@ resource "azurerm_linux_virtual_machine" "kafka_brokers" {
     publisher = "resf"
     offer     = "rockylinux-x86_64"
     sku       = "9-base"
-    version   = "9.6.20250531"
+    version   = "latest"
   }
 
   plan {

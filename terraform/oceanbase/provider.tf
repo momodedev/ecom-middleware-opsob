@@ -22,6 +22,9 @@ provider "azurerm" {
   # Use the control-node VM's SystemAssigned managed identity.
   # No az login required - the VM's managed identity has Contributor on the subscription.
   use_msi = true
+  # Avoid provider registration discovery calls that require
+  # Microsoft.Resources/subscriptions/providers/read at subscription scope.
+  resource_provider_registrations = "none"
 }
 
 provider "azapi" {

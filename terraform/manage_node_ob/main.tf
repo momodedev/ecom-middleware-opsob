@@ -223,11 +223,7 @@ locals {
 # We can't check for existing role assignments with azurerm provider
 # So we'll use try() to handle cases where it might not exist yet
 resource "azurerm_role_assignment" "control" {
-  scope                = data.azurerm_subscription.current.id
+  scope                = local.resource_group_id
   role_definition_name = "Contributor"
   principal_id         = local.control_vm_principal_id
-  
-  lifecycle {
-    ignore_changes = [principal_id, role_definition_name]
-  }
 }
