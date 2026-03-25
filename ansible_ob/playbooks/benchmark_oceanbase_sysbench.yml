@@ -306,7 +306,14 @@
         tps=$(echo "$result" | awk -F'[()]' '/transactions:/ {gsub(/ per sec\./, "", $2); print $2}' | awk '{print $1}' | tail -1)
         p95=$(echo "$result" | awk '/95th percentile:/ {print $3}' | tail -1)
         avg_lat=$(echo "$result" | awk '/avg:/ {print $2}' | tail -1)
-        total_q=$(echo "$result" | awk '/queries performed:/ {getline; print $1}' | tr -d '()' | tail -1)
+        total_q=$(echo "$result" | awk '/^[[:space:]]*queries:[[:space:]]+[0-9]+/ {print $2}' | tail -1)
+        if [ -z "${total_q:-}" ]; then
+          total_q=$(echo "$result" | awk '/^[[:space:]]*total:[[:space:]]+[0-9]+/ {print $2}' | tail -1)
+        fi
+        if [ -z "${total_q:-}" ]; then
+          total_q=$(echo "$result" | awk '/^[[:space:]]*transactions:[[:space:]]+[0-9]+/ {print $2}' | tail -1)
+        fi
+        total_q=$(echo "${total_q:-0}" | tr -d ',')
         errs=$(echo "$result" | awk -F': ' '/ignored errors:/ {print $2}' | awk '{print $1}' | tail -1)
 
         tps=${tps:-0}
