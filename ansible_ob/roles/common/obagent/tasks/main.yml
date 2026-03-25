@@ -26,7 +26,11 @@
 
 - name: Detect installed obagent control binary path
   ansible.builtin.shell: |
-    rpm -ql obagent | grep -E -m1 '/ob_agentctl$' || true
+    ctl_path="$(rpm -ql obagent | grep -E '/ob_agentctl$' | grep -v '^/home/' | head -n1 || true)"
+    if [ -z "$ctl_path" ]; then
+      ctl_path="$(rpm -ql obagent | grep -E -m1 '/ob_agentctl$' || true)"
+    fi
+    echo "$ctl_path"
   args:
     executable: /bin/bash
   register: obagent_ctl_path_cmd
@@ -43,6 +47,19 @@
   ansible.builtin.set_fact:
     obagent_ctl_path: "{{ obagent_ctl_path_cmd.stdout | trim }}"
     obagent_home_dir: "{{ (obagent_ctl_path_cmd.stdout | trim) | regex_replace('/bin/ob_agentctl$', '') }}"
+    obagent_ctl_under_home: "{{ (obagent_ctl_path_cmd.stdout | trim) is match('^/home/') }}"
+  tags: obagent
+
+- name: Ensure home directories are traversable for obagent runtime
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    mode: "{{ item.mode }}"
+    state: directory
+  loop:
+    - { path: "/home/admin", mode: "0755" }
+    - { path: "{{ obagent_home_dir }}", mode: "0755" }
+    - { path: "{{ obagent_home_dir }}/bin", mode: "0755" }
+  when: obagent_ctl_under_home
   tags: obagent
 
 - name: Ensure ob_agentctl is executable
@@ -71,6 +88,24 @@
     path: /usr/lib/systemd/system/obagent.service
     regexp: '^ExecReload=.*$'
     replace: 'ExecReload={{ obagent_ctl_path }} restart'
+  tags: obagent
+
+- name: Ensure obagent systemd service runs as admin for /home-based binary
+  ansible.builtin.lineinfile:
+    path: /usr/lib/systemd/system/obagent.service
+    regexp: '^User='
+    line: 'User=admin'
+    insertafter: '^\[Service\]'
+  when: obagent_ctl_under_home
+  tags: obagent
+
+- name: Ensure obagent systemd service group is admin for /home-based binary
+  ansible.builtin.lineinfile:
+    path: /usr/lib/systemd/system/obagent.service
+    regexp: '^Group='
+    line: 'Group=admin'
+    insertafter: '^User=admin$'
+  when: obagent_ctl_under_home
   tags: obagent
 
 - name: Disable obagent metrics basic auth for Prometheus scraping
