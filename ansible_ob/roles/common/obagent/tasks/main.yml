@@ -26,8 +26,7 @@
 
 - name: Detect installed obagent control binary path
   ansible.builtin.shell: |
-    set -euo pipefail
-    rpm -ql obagent | awk '/\/ob_agentctl$/ {print; exit}'
+    rpm -ql obagent | grep -E -m1 '/ob_agentctl$' || true
   args:
     executable: /bin/bash
   register: obagent_ctl_path_cmd
@@ -57,21 +56,21 @@
   ansible.builtin.replace:
     path: /usr/lib/systemd/system/obagent.service
     regexp: '^ExecStart=.*$'
-    replace: 'ExecStart={{ obagent_ctl_path }} start'
+    replace: 'ExecStart=/bin/bash {{ obagent_ctl_path }} start'
   tags: obagent
 
 - name: Ensure obagent systemd stop command path is correct
   ansible.builtin.replace:
     path: /usr/lib/systemd/system/obagent.service
     regexp: '^ExecStop=.*$'
-    replace: 'ExecStop={{ obagent_ctl_path }} stop'
+    replace: 'ExecStop=/bin/bash {{ obagent_ctl_path }} stop'
   tags: obagent
 
 - name: Ensure obagent systemd reload command path is correct
   ansible.builtin.replace:
     path: /usr/lib/systemd/system/obagent.service
     regexp: '^ExecReload=.*$'
-    replace: 'ExecReload={{ obagent_ctl_path }} restart'
+    replace: 'ExecReload=/bin/bash {{ obagent_ctl_path }} restart'
   tags: obagent
 
 - name: Disable obagent metrics basic auth for Prometheus scraping
@@ -136,7 +135,14 @@
     daemon_reload: yes
     enabled: yes
     state: restarted
-  register: obagent_service_start
+  register: obagent_service_restart
+  failed_when: false
+  tags: obagent
+
+- name: Check obagent active state after restart
+  ansible.builtin.command: systemctl is-active obagent.service
+  register: obagent_service_active
+  changed_when: false
   failed_when: false
   tags: obagent
 
@@ -145,7 +151,7 @@
     path: "{{ obagent_home_dir }}/conf/config_properties/monagent_pipeline.yaml"
     regexp: '(^\s*- key:\s*monagent\.pipeline\.ob\.status\s*\n\s*value:\s*)active'
     replace: '\1inactive'
-  when: obagent_service_start is failed
+  when: obagent_service_active.stdout != 'active'
   tags: obagent
 
 - name: Retry start obagent after fallback config
@@ -154,9 +160,17 @@
     daemon_reload: yes
     enabled: yes
     state: restarted
-  register: obagent_service_retry
+  register: obagent_service_retry_restart
   failed_when: false
-  when: obagent_service_start is failed
+  when: obagent_service_active.stdout != 'active'
+  tags: obagent
+
+- name: Check obagent active state after fallback retry
+  ansible.builtin.command: systemctl is-active obagent.service
+  register: obagent_service_retry_active
+  changed_when: false
+  failed_when: false
+  when: obagent_service_active.stdout != 'active'
   tags: obagent
 
 - name: Capture obagent service status on failure
@@ -165,8 +179,8 @@
   changed_when: false
   failed_when: false
   when:
-    - obagent_service_start is failed
-    - obagent_service_retry is not defined or obagent_service_retry is failed
+    - obagent_service_active.stdout != 'active'
+    - obagent_service_retry_active is not defined or obagent_service_retry_active.stdout != 'active'
   tags: obagent
 
 - name: Capture obagent journal on failure
@@ -175,8 +189,8 @@
   changed_when: false
   failed_when: false
   when:
-    - obagent_service_start is failed
-    - obagent_service_retry is not defined or obagent_service_retry is failed
+    - obagent_service_active.stdout != 'active'
+    - obagent_service_retry_active is not defined or obagent_service_retry_active.stdout != 'active'
   tags: obagent
 
 - name: Fail when obagent still cannot start
@@ -189,6 +203,6 @@
       journalctl excerpt:
       {{ obagent_service_journal.stdout | default('n/a') }}
   when:
-    - obagent_service_start is failed
-    - obagent_service_retry is not defined or obagent_service_retry is failed
+    - obagent_service_active.stdout != 'active'
+    - obagent_service_retry_active is not defined or obagent_service_retry_active.stdout != 'active'
   tags: obagent
