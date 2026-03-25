@@ -649,6 +649,88 @@
   loop: "{{ groups['oceanbase'] }}"
   run_once: true
 
+- name: Detect available SQL client on OBD controller
+  shell: |
+    set -euo pipefail
+    if command -v obclient >/dev/null 2>&1; then
+      echo "obclient"
+    elif command -v mysql >/dev/null 2>&1; then
+      echo "mysql"
+    else
+      echo ""
+    fi
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become_user: "{{ oceanbase_admin_user }}"
+  register: oceanbase_sql_client_detect
+  changed_when: false
+  failed_when: false
+  when:
+    - oceanbase_optimize_after_start | bool
+
+- name: Install mysql client when no SQL client is available
+  shell: |
+    set -euo pipefail
+    if command -v dnf >/dev/null 2>&1; then
+      dnf -y install mariadb
+    else
+      yum -y install mariadb
+    fi
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become: true
+  when:
+    - oceanbase_optimize_after_start | bool
+    - (oceanbase_sql_client_detect.stdout | default('') | trim) == ''
+
+- name: Re-detect SQL client on OBD controller after install attempt
+  shell: |
+    set -euo pipefail
+    if command -v obclient >/dev/null 2>&1; then
+      echo "obclient"
+    elif command -v mysql >/dev/null 2>&1; then
+      echo "mysql"
+    else
+      echo ""
+    fi
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become_user: "{{ oceanbase_admin_user }}"
+  register: oceanbase_sql_client_detect_after_install
+  changed_when: false
+  failed_when: false
+  when:
+    - oceanbase_optimize_after_start | bool
+
+- name: Set SQL client command fact for optimization
+  set_fact:
+    oceanbase_sql_client_cmd: "{{ oceanbase_sql_client_detect_after_install.stdout | default('') | trim }}"
+  run_once: true
+  when:
+    - oceanbase_optimize_after_start | bool
+
+- name: Show SQL client used for optimization
+  debug:
+    msg: "OceanBase post-start optimization SQL client={{ oceanbase_sql_client_cmd | default('none') }}"
+  run_once: true
+  when:
+    - oceanbase_optimize_after_start | bool
+
+- name: Fail when SQL client is unavailable for optimization
+  fail:
+    msg: "Neither obclient nor mysql client is available on OBD controller {{ oceanbase_obd_controller_host }}"
+  run_once: true
+  when:
+    - oceanbase_optimize_after_start | bool
+    - not (oceanbase_optimize_skip_when_no_sql_client | bool)
+    - (oceanbase_sql_client_cmd | default('') | length) == 0
+
 - name: Resolve tenant resource unit name from metadata
   shell: |
     set -euo pipefail
@@ -665,9 +747,9 @@
     WHERE t.tenant_name='{{ oceanbase_optimize_tenant_name }}'
     LIMIT 1;"
 
-    if command -v obclient >/dev/null 2>&1; then
+    if [ "{{ oceanbase_sql_client_cmd | default('') }}" = "obclient" ]; then
       obclient -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -N -e "$SQL" | awk 'NF {print $1; exit}'
-    elif command -v mysql >/dev/null 2>&1; then
+    elif [ "{{ oceanbase_sql_client_cmd | default('') }}" = "mysql" ]; then
       mysql -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -N -e "$SQL" | awk 'NF {print $1; exit}'
     else
       echo ""
@@ -682,6 +764,7 @@
   failed_when: false
   when:
     - oceanbase_optimize_after_start | bool
+    - (oceanbase_sql_client_cmd | default('') | length) > 0
 
 - name: Set resolved resource unit name fact
   set_fact:
@@ -711,9 +794,9 @@
     set -euo pipefail
     SQL="ALTER RESOURCE UNIT {{ oceanbase_optimize_unit_config_name_resolved }} MEMORY_SIZE='{{ oceanbase_optimize_tenant_memory_size }}';"
 
-    if command -v obclient >/dev/null 2>&1; then
+    if [ "{{ oceanbase_sql_client_cmd | default('') }}" = "obclient" ]; then
       obclient -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -e "$SQL"
-    elif command -v mysql >/dev/null 2>&1; then
+    elif [ "{{ oceanbase_sql_client_cmd | default('') }}" = "mysql" ]; then
       mysql -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -e "$SQL"
     else
       echo "Neither obclient nor mysql client is available" >&2
@@ -728,6 +811,7 @@
   changed_when: true
   when:
     - oceanbase_optimize_after_start | bool
+    - (oceanbase_sql_client_cmd | default('') | length) > 0
     - (oceanbase_optimize_unit_config_name_resolved | default('') | length) > 0
 
 - name: Set OceanBase system memory
@@ -735,9 +819,9 @@
     set -euo pipefail
     SQL="ALTER SYSTEM SET system_memory='{{ oceanbase_optimize_system_memory }}';"
 
-    if command -v obclient >/dev/null 2>&1; then
+    if [ "{{ oceanbase_sql_client_cmd | default('') }}" = "obclient" ]; then
       obclient -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -e "$SQL"
-    elif command -v mysql >/dev/null 2>&1; then
+    elif [ "{{ oceanbase_sql_client_cmd | default('') }}" = "mysql" ]; then
       mysql -h127.0.0.1 -P{{ oceanbase_mysql_port }} -uroot@sys -p'{{ oceanbase_root_password }}' -Doceanbase -e "$SQL"
     else
       echo "Neither obclient nor mysql client is available" >&2
@@ -753,3 +837,4 @@
   when:
     - oceanbase_optimize_after_start | bool
     - oceanbase_optimize_set_system_memory | bool
+    - (oceanbase_sql_client_cmd | default('') | length) > 0
