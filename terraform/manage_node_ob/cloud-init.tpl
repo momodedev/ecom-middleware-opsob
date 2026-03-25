@@ -88,9 +88,22 @@ runcmd:
   # Login to Azure using managed identity (control node has Contributor role)
   - su - azureadmin -c 'az login --identity'
 
-  # Upgrade Rocky Linux to the current 9.7 baseline after tools are installed
-  - dnf -y upgrade --refresh
-  - dnf clean all || true
+  # Upgrade/sync OS packages to Rocky Linux 9.7 baseline with safe fallback
+  - |
+    set -euxo pipefail
+
+    dnf -y --releasever=9.7 distro-sync --refresh || \
+    dnf -y --releasever=9.7 upgrade --refresh || \
+    dnf -y upgrade --refresh
+
+    version_id=$(awk -F= '/^VERSION_ID=/{gsub(/"/,"",$2); print $2}' /etc/os-release)
+    if echo "$version_id" | grep -Eq '^9\\.7([.].*)?$'; then
+      echo "Rocky Linux baseline is now $version_id"
+    else
+      echo "WARNING: Expected Rocky Linux 9.7 but found VERSION_ID=$version_id" | tee /var/log/rocky97-warning.log
+    fi
+
+    dnf clean all || true
   
   # Signal completion
   - touch /var/lib/cloud/instance/control-node-initialized
@@ -109,6 +122,6 @@ final_message: "Control node initialization complete after $UPTIME seconds"
 power_state:
   delay: now
   mode: reboot
-  message: "Rebooting control node after Rocky Linux system update"
+  message: "Rebooting control node after Rocky Linux 9.7 baseline update"
   timeout: 60
   condition: true
