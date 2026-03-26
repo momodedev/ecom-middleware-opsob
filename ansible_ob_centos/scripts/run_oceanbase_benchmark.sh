@@ -14,6 +14,8 @@ MYSQL_USER="$3"
 MYSQL_PASSWORD_ARG="$4"
 MYSQL_DB="$5"
 INVENTORY_FILE="${6:-inventory/oceanbase_hosts}"
+RUN_TS="$(date -u +%Y%m%dT%H%M%SZ)"
+BENCHMARK_LABEL="${RUN_TS}_${CLUSTER_LABEL}"
 
 if [ "$MYSQL_PASSWORD_ARG" = "-" ]; then
   MYSQL_PASSWORD="${OCEANBASE_BENCH_PASSWORD:-}"
@@ -46,10 +48,10 @@ echo "Using inventory: $INVENTORY_PATH"
 echo "Using ansible root: $ANSIBLE_ROOT"
 
 ansible-playbook -i "$INVENTORY_PATH" playbooks/benchmark_oceanbase_sysbench.yml \
-  -e "benchmark_label=$CLUSTER_LABEL" \
+  -e "benchmark_label=$BENCHMARK_LABEL" \
   -e "mysql_host=$MYSQL_HOST" \
   -e "mysql_user=$MYSQL_USER" \
   -e "mysql_password=$MYSQL_PASSWORD" \
   -e "mysql_db=$MYSQL_DB"
 
-echo "Benchmark finished. CSV: /tmp/oceanbase-bench/${CLUSTER_LABEL}.csv"
+echo "Benchmark finished. CSV: /tmp/oceanbase-bench/${BENCHMARK_LABEL}.csv"

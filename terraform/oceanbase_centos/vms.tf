@@ -38,7 +38,7 @@ resource "azurerm_linux_virtual_machine" "oceanbase_observers" {
   location            = local.deploy_location
   resource_group_name = local.oceanbase_rg_name
   size                = var.oceanbase_vm_size
-  zone                = var.enable_availability_zones ? element(var.centos_ob_zones, count.index) : null
+  zone                = var.enable_availability_zones ? var.oceanbase_vm_zone : null
 
   network_interface_ids = [
     azurerm_network_interface.oceanbase_observers[count.index].id
@@ -97,7 +97,7 @@ resource "azurerm_linux_virtual_machine" "oceanbase_observers" {
     Environment = "production"
     Component   = "centos-oceanbase-observer"
     Index       = count.index
-    Zone        = var.enable_availability_zones && var.oceanbase_vm_zone != "" ? var.oceanbase_vm_zone : "none"
+    Zone        = var.enable_availability_zones ? var.oceanbase_vm_zone : "none"
   }
 
   lifecycle {
@@ -119,7 +119,7 @@ resource "azurerm_managed_disk" "oceanbase_data" {
   create_option        = "Empty"
   disk_size_gb         = var.oceanbase_data_disk_size_gb
 
-  zone = var.enable_availability_zones ? element(var.centos_ob_zones, count.index) : null
+  zone = var.enable_availability_zones ? var.oceanbase_vm_zone : null
 
   tags = {
     Environment = "production"
@@ -154,7 +154,7 @@ resource "azurerm_managed_disk" "oceanbase_redo" {
   create_option        = "Empty"
   disk_size_gb         = var.oceanbase_redo_disk_size_gb
 
-  zone = var.enable_availability_zones ? element(var.centos_ob_zones, count.index) : null
+  zone = var.enable_availability_zones ? var.oceanbase_vm_zone : null
 
   tags = {
     Environment = "production"

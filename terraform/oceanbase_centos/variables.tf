@@ -12,8 +12,8 @@ variable "resource_group_name" {
 
 variable "oceanbase_vm_zone" {
   type        = string
-  default     = ""
-  description = "Azure Availability Zone for OceanBase observer VMs (1, 2, or 3). Leave empty for regions without AZs."
+  default     = "2"
+  description = "Single Azure Availability Zone used by all OceanBase VMs and disks (e.g., 2)."
 }
 
 variable "enable_availability_zones" {
@@ -40,9 +40,9 @@ variable "oceanbase_vm_size" {
 }
 
 variable "manage_network_security_rules" {
-  description = "Create/manage NSG security rules. Set false when reusing rules from terraform/oceanbase."
+  description = "Deprecated variable retained for backward compatibility. NSG rules are managed by this module."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "oceanbase_data_disk_size_gb" {
@@ -214,8 +214,8 @@ variable "centos_ob_subnet_address_prefix" {
 
 variable "centos_ob_zones" {
   type        = list(string)
-  default     = ["2", "3", "4"]
-  description = "Availability zones for CentOS OceanBase VMs in westus3 (zone 1 is restricted for D8s_v5)."
+  default     = ["2"]
+  description = "Deprecated; use oceanbase_vm_zone for a single shared zone across all VMs and disks."
 }
 
 variable "repository_name" {
