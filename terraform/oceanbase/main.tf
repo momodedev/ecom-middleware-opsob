@@ -288,6 +288,11 @@ resource "null_resource" "wait_for_ssh" {
     
     interpreter = ["/bin/bash", "-c"]
   }
+
+  # Re-run when VMs are recreated (e.g. after taint or cloud-init change)
+  triggers = {
+    vm_ids = join(",", [for vm in azurerm_linux_virtual_machine.oceanbase_observers : vm.id])
+  }
 }
 
 # Deploy OceanBase cluster using Ansible
