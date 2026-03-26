@@ -1,0 +1,72 @@
+---
+# playbook to deploy the monitoring stack for a CentOS OceanBase cluster
+#
+# This playbook assumes you have defined the following host group in your
+# Ansible inventory:
+#
+#   - **oceanbase** – the set of CentOS OceanBase observer hosts.
+#     Each observer will run a node exporter so
+#     Prometheus can collect CPU, memory and disk metrics.
+#
+# Prometheus and Grafana are deployed on the local management node
+# (localhost) where Ansible runs.  No separate [management_node] group
+# is needed.
+#
+# To use this playbook run:
+#
+#     ansible-playbook -i inventory/oceanbase_hosts_auto playbooks/deploy_monitoring_playbook.yml
+#
+# See the README in this directory for more details.
+
+- name: Deploy Prometheus and Grafana to the management node
+  hosts: localhost
+  connection: local
+  become: true
+  vars:
+    prometheus_version: "2.50.0"
+    grafana_apt_key_url: "https://packages.grafana.com/gpg.key"
+    node_exporter_version: "1.7.0"
+  roles:
+    - role: ../roles/monitoring/prometheus_grafana
+
+- name: Install node exporter on all CentOS OceanBase observers
+  hosts: oceanbase
+  become: true
+  vars:
+    node_exporter_version: "1.7.0"
+  roles:
+    - role: ../roles/common/node_exporter
+
+- name: Generate Prometheus node exporter targets for CentOS cluster
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  vars:
+    node_targets_path: "/etc/prometheus/file_sd/centos_ob_node_targets.json"
+    node_exporter_port: 9100
+  tasks:
+    - name: Ensure Prometheus file_sd directory exists
+      file:
+        path: "{{ node_targets_path | dirname }}"
+        state: directory
+        mode: "0755"
+
+    - name: Render CentOS node exporter targets file
+      template:
+        src: ../templates/prometheus_node_targets.json.j2
+        dest: "{{ node_targets_path }}"
+        mode: "0644"
+      vars:
+        target_ips: "{{ groups['oceanbase'] | map('extract', hostvars, 'ansible_host') | list }}"
+        target_port: "{{ node_exporter_port }}"
+
+    - name: Restart Prometheus to pick up new targets
+      ansible.builtin.systemd:
+        name: prometheus.service
+        state: restarted
+
+    - name: Restart Grafana to pick up any dashboard changes
+      ansible.builtin.systemd:
+        name: grafana-server
+        state: restarted

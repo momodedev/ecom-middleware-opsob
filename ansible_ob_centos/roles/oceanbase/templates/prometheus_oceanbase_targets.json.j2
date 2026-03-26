@@ -1,0 +1,14 @@
+[
+  {
+    "targets": [
+{% for host in groups['oceanbase'] %}
+      "{{ hostvars[host]['private_ip'] | default(hostvars[host]['ansible_host']) }}:{{ prometheus_ob_exporter_port | default(9308) }}"{% if not loop.last %},{% endif %}
+{% endfor %}
+    ],
+    "labels": {
+      "job": "oceanbase",
+      "cluster": "{{ oceanbase_cluster_name | default('ob_cluster') }}",
+      "__meta_oceanbase_role": "observer"
+    }
+  }
+]

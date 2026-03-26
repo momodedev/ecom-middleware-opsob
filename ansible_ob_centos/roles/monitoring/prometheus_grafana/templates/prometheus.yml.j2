@@ -1,0 +1,27 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets:
+          - 'localhost:9090'
+
+  - job_name: 'oceanbase-exporter'
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/file_sd/oceanbase_targets.json'
+        refresh_interval: 30s
+
+  - job_name: 'node-exporter'
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/file_sd/node_targets.json'
+        refresh_interval: 30s
+
+  - job_name: 'centos-ob-node-exporter'
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/file_sd/centos_ob_node_targets.json'
+        refresh_interval: 30s

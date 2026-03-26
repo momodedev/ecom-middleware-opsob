@@ -1,0 +1,650 @@
+---
+# OceanBase 集群部署角色
+
+- name: Wait for SSH and verify connectivity
+  wait_for:
+    port: 22
+    host: "{{ ansible_host }}"
+    delay: 10
+    timeout: 600
+  vars:
+    ansible_connection: local
+  register: ssh_wait
+  retries: 3
+  delay: 30
+  until: ssh_wait is succeeded
+
+- name: Test SSH connection
+  command: echo "SSH OK"
+  register: ssh_test
+  changed_when: false
+  retries: 5
+  delay: 10
+  until: ssh_test is succeeded
+
+- name: Fail if SSH is not working
+  fail:
+    msg: "Cannot establish SSH connection to {{ inventory_hostname }}"
+  when: ssh_test is failed
+
+# OS Preparation Tasks
+- name: Disable firewalld
+  ansible.builtin.systemd:
+    name: firewalld
+    state: stopped
+    enabled: no
+  ignore_errors: true
+
+- name: Disable SELinux
+  lineinfile:
+    path: /etc/selinux/config
+    regexp: '^SELINUX='
+    line: 'SELINUX=disabled'
+  notify: reboot required
+
+- name: Configure system limits for OceanBase
+  blockinfile:
+    path: /etc/security/limits.conf
+    block: |
+      root soft nofile 655350
+      root hard nofile 655350
+      * soft nofile 655350
+      * hard nofile 655350
+      * soft stack unlimited
+      * hard stack unlimited
+      * soft nproc 655360
+      * hard nproc 655360
+      * soft core unlimited
+      * hard core unlimited
+
+- name: Configure sysctl parameters for OceanBase
+  blockinfile:
+    path: /etc/sysctl.conf
+    block: |
+      # For OceanBase
+      fs.aio-max-nr = 1048576
+      net.core.somaxconn = 2048
+      net.core.netdev_max_backlog = 10000
+      net.core.rmem_default = 16777216
+      net.core.wmem_default = 16777216
+      net.core.rmem_max = 16777216
+      net.core.wmem_max = 16777216
+      net.ipv4.ip_forward = 0
+      net.ipv4.conf.default.rp_filter = 1
+      net.ipv4.tcp_syncookies = 1
+      net.ipv4.tcp_rmem = 4096 87380 16777216
+      net.ipv4.tcp_wmem = 4096 65536 16777216
+      net.ipv4.tcp_max_syn_backlog = 16384
+      net.ipv4.tcp_fin_timeout = 15
+      vm.swappiness = 0
+      vm.min_free_kbytes = 2097152
+      vm.overcommit_memory = 0
+      fs.file-max = 6573688
+      vm.max_map_count = 655360
+      kernel.core_pattern = /oceanbase/data/core-%e-%p-%t
+  notify: reload sysctl
+
+- name: Apply sysctl changes immediately
+  ansible.builtin.command: sysctl -p
+  ignore_errors: true
+
+- name: Disable transparent huge pages
+  blockinfile:
+    path: /etc/rc.d/rc.local
+    block: |
+      if test -f /sys/kernel/mm/transparent_hugepage/enabled; then
+        echo never > /sys/kernel/mm/transparent_hugepage/enabled
+      fi
+      if test -f /sys/kernel/mm/transparent_hugepage/defrag; then
+        echo never > /sys/kernel/mm/transparent_hugepage/defrag
+      fi
+    create: yes
+    mode: 0755
+
+- name: Create admin user for OceanBase
+  user:
+    name: "{{ oceanbase_admin_user }}"
+    group: "{{ oceanbase_admin_group }}"
+    groups: "{{ oceanbase_admin_group }}"
+    shell: /bin/bash
+    create_home: yes
+    state: present
+
+- name: Configure sudo for admin user
+  lineinfile:
+    path: /etc/sudoers
+    line: '{{ oceanbase_admin_user }} ALL=(ALL) NOPASSWD: ALL'
+    validate: 'visudo -cf %s'
+
+- name: Set admin user password
+  user:
+    name: "{{ oceanbase_admin_user }}"
+    password: "{{ 'admin' | password_hash('sha512') }}"
+    update_password: on_create
+
+- name: Setup SSH key for admin user
+  user:
+    name: "{{ oceanbase_admin_user }}"
+    generate_ssh_key: yes
+    ssh_key_bits: 2048
+    ssh_key_file: .ssh/id_rsa
+
+- name: Discover candidate unmounted data disks
+  shell: |
+    set -euo pipefail
+    mounted_devs=$(lsblk -nrpo NAME,MOUNTPOINT | awk '$2!="" {print $1}')
+    mounted_parents=$(for dev in $mounted_devs; do
+      parent=$(lsblk -ndo PKNAME "$dev" 2>/dev/null || true)
+      if [ -n "$parent" ]; then
+        echo "/dev/$parent"
+      fi
+    done | sort -u)
+    lsblk -dnbo PATH,SIZE,TYPE | awk '$3=="disk" {print $1" "$2}' | while read -r dev size; do
+      if echo "$mounted_parents" | grep -qx "$dev"; then
+        continue
+      fi
+      echo "$dev $size"
+    done
+  register: oceanbase_candidate_disks
+  changed_when: false
+  when:
+    - not (oceanbase_skip_data_mount | bool)
+    - oceanbase_disk_auto_detect_by_size | bool
+    - (oceanbase_data_disk_device | length == 0) or (oceanbase_redo_disk_device | length == 0)
+
+- name: Set expected disk sizes in bytes
+  set_fact:
+    oceanbase_data_disk_size_bytes: "{{ (oceanbase_data_disk_size_gb | int) * 1073741824 }}"
+    oceanbase_redo_disk_size_bytes: "{{ (oceanbase_redo_disk_size_gb | int) * 1073741824 }}"
+  when: not (oceanbase_skip_data_mount | bool)
+
+- name: Resolve data disk device from explicit var or closest unmounted size
+  shell: |
+    set -euo pipefail
+    if [ -n "{{ oceanbase_data_disk_device | default('') }}" ]; then
+      echo "{{ oceanbase_data_disk_device }}"
+      exit 0
+    fi
+
+    mounted_devs=$(lsblk -nrpo NAME,MOUNTPOINT | awk '$2!="" {print $1}')
+    mounted_parents=$(for dev in $mounted_devs; do
+      parent=$(lsblk -ndo PKNAME "$dev" 2>/dev/null || true)
+      if [ -n "$parent" ]; then
+        echo "/dev/$parent"
+      fi
+    done | sort -u)
+
+    lsblk -dnbo PATH,SIZE,TYPE | awk '$3=="disk" {print $1" "$2}' | while read -r dev size; do
+      if echo "$mounted_parents" | grep -qx "$dev"; then
+        continue
+      fi
+      echo "$dev $size"
+    done | awk -v t={{ oceanbase_data_disk_size_bytes }} '
+      {
+        d=$2-t; if (d<0) d=-d;
+        if (best=="" || d<best) { best=d; dev=$1 }
+      }
+      END { if (dev!="") print dev }
+    '
+  register: oceanbase_data_disk_device_detect
+  changed_when: false
+  when: not (oceanbase_skip_data_mount | bool)
+
+- name: Set resolved data disk device
+  set_fact:
+    oceanbase_data_disk_device_resolved: "{{ oceanbase_data_disk_device_detect.stdout | trim }}"
+  when: not (oceanbase_skip_data_mount | bool)
+
+- name: Resolve redo disk device from explicit var or closest unmounted size excluding data disk
+  shell: |
+    set -euo pipefail
+    if [ -n "{{ oceanbase_redo_disk_device | default('') }}" ]; then
+      echo "{{ oceanbase_redo_disk_device }}"
+      exit 0
+    fi
+
+    mounted_devs=$(lsblk -nrpo NAME,MOUNTPOINT | awk '$2!="" {print $1}')
+    mounted_parents=$(for dev in $mounted_devs; do
+      parent=$(lsblk -ndo PKNAME "$dev" 2>/dev/null || true)
+      if [ -n "$parent" ]; then
+        echo "/dev/$parent"
+      fi
+    done | sort -u)
+
+    lsblk -dnbo PATH,SIZE,TYPE | awk '$3=="disk" {print $1" "$2}' | while read -r dev size; do
+      if [ "$dev" = "{{ oceanbase_data_disk_device_resolved | default('') }}" ]; then
+        continue
+      fi
+      if echo "$mounted_parents" | grep -qx "$dev"; then
+        continue
+      fi
+      echo "$dev $size"
+    done | awk -v t={{ oceanbase_redo_disk_size_bytes }} '
+      {
+        d=$2-t; if (d<0) d=-d;
+        if (best=="" || d<best) { best=d; dev=$1 }
+      }
+      END { if (dev!="") print dev }
+    '
+  register: oceanbase_redo_disk_device_detect
+  changed_when: false
+  when: not (oceanbase_skip_data_mount | bool)
+
+- name: Set resolved redo disk device
+  set_fact:
+    oceanbase_redo_disk_device_resolved: "{{ oceanbase_redo_disk_device_detect.stdout | trim }}"
+  when: not (oceanbase_skip_data_mount | bool)
+
+- name: Show resolved OceanBase disk mapping
+  debug:
+    msg: "data={{ oceanbase_data_disk_device_resolved | default('') }}, redo={{ oceanbase_redo_disk_device_resolved | default('') }}"
+  when: not (oceanbase_skip_data_mount | bool)
+
+- name: Fail when expected 500G data disk is missing
+  fail:
+    msg: "Cannot find OceanBase data disk ({{ oceanbase_data_disk_size_gb }}GiB) on {{ inventory_hostname }}"
+  when:
+    - not (oceanbase_skip_data_mount | bool)
+    - oceanbase_strict_mount_check | bool
+    - (oceanbase_data_disk_device_resolved | default('') | length) == 0
+
+- name: Fail when expected 200G redo disk is missing
+  fail:
+    msg: "Cannot find OceanBase redo disk ({{ oceanbase_redo_disk_size_gb }}GiB) on {{ inventory_hostname }}"
+  when:
+    - not (oceanbase_skip_data_mount | bool)
+    - oceanbase_strict_mount_check | bool
+    - (oceanbase_redo_disk_device_resolved | default('') | length) == 0
+
+- name: Create OceanBase directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ oceanbase_admin_user }}"
+    group: "{{ oceanbase_admin_group }}"
+    mode: '0755'
+  loop:
+    - /oceanbase
+    - /oceanbase/server
+    - /oceanbase/data
+    - /oceanbase/redo
+    - "{{ oceanbase_home_dir }}"
+
+- name: Probe filesystem on OceanBase data disk
+  command: "blkid -o value -s TYPE {{ oceanbase_data_disk_device_resolved }}"
+  register: oceanbase_data_disk_fs_probe
+  changed_when: false
+  failed_when: false
+  when:
+    - not (oceanbase_skip_data_mount | bool)
+    - (oceanbase_data_disk_device_resolved | default('') | length) > 0
+
+- name: Probe filesystem on OceanBase redo disk
+  command: "blkid -o value -s TYPE {{ oceanbase_redo_disk_device_resolved }}"
+  register: oceanbase_redo_disk_fs_probe
+  changed_when: false
+  failed_when: false
+  when:
+    - not (oceanbase_skip_data_mount | bool)
+    - (oceanbase_redo_disk_device_resolved | default('') | length) > 0
+
+- name: Create filesystem on OceanBase data disk when needed
+  filesystem:
+    fstype: "{{ oceanbase_disk_filesystem }}"
+    dev: "{{ oceanbase_data_disk_device_resolved }}"
+  when:
+    - not (oceanbase_skip_data_mount | bool)
+    - (oceanbase_data_disk_device_resolved | default('') | length) > 0
+    - (oceanbase_data_disk_fs_probe.stdout | default('') | trim) == ''
+
+- name: Create filesystem on OceanBase redo disk when needed
+  filesystem:
+    fstype: "{{ oceanbase_disk_filesystem }}"
+    dev: "{{ oceanbase_redo_disk_device_resolved }}"
+  when:
+    - not (oceanbase_skip_data_mount | bool)
+    - (oceanbase_redo_disk_device_resolved | default('') | length) > 0
+    - (oceanbase_redo_disk_fs_probe.stdout | default('') | trim) == ''
+
+- name: Mount OceanBase data disk (500G) to data directory
+  mount:
+    path: "{{ oceanbase_data_mount_point }}"
+    src: "{{ oceanbase_data_disk_device_resolved }}"
+    fstype: "{{ oceanbase_disk_filesystem }}"
+    opts: defaults
+    state: mounted
+  ignore_errors: "{{ not (oceanbase_strict_mount_check | bool) }}"
+  when:
+    - not (oceanbase_skip_data_mount | bool)
+    - (oceanbase_data_disk_device_resolved | default('') | length) > 0
+
+- name: Mount OceanBase redo disk (200G) to redo directory
+  mount:
+    path: "{{ oceanbase_redo_mount_point }}"
+    src: "{{ oceanbase_redo_disk_device_resolved }}"
+    fstype: "{{ oceanbase_disk_filesystem }}"
+    opts: defaults
+    state: mounted
+  ignore_errors: "{{ not (oceanbase_strict_mount_check | bool) }}"
+  when:
+    - not (oceanbase_skip_data_mount | bool)
+    - (oceanbase_redo_disk_device_resolved | default('') | length) > 0
+
+- name: Detect OceanBase installer package type
+  set_fact:
+    oceanbase_installer_type: "{{ 'rpm' if (oceanbase_all_in_one_url | lower).endswith('.rpm') else 'tar' }}"
+
+- name: Download OceanBase installer package
+  get_url:
+    url: "{{ oceanbase_all_in_one_url }}"
+    dest: "{{ '/tmp/oceanbase-obdeploy.rpm' if oceanbase_installer_type == 'rpm' else '/tmp/oceanbase-all-in-one.tar.gz' }}"
+    owner: "{{ oceanbase_admin_user }}"
+    group: "{{ oceanbase_admin_group }}"
+    mode: '0644'
+  become_user: "{{ 'root' if oceanbase_installer_type == 'rpm' else oceanbase_admin_user }}"
+  tags: download
+
+- name: Extract OceanBase package
+  unarchive:
+    src: /tmp/oceanbase-all-in-one.tar.gz
+    dest: "{{ oceanbase_admin_home }}/"
+    owner: "{{ oceanbase_admin_user }}"
+    group: "{{ oceanbase_admin_group }}"
+    remote_src: yes
+  become_user: "{{ oceanbase_admin_user }}"
+  when: oceanbase_installer_type == 'tar'
+  tags: extract
+
+- name: Install OceanBase using all-in-one install script
+  shell: |
+    cd {{ oceanbase_admin_home }}/oceanbase-all-in-one/bin
+    ./install.sh
+  become_user: "{{ oceanbase_admin_user }}"
+  environment:
+    PATH: "{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin"
+  when: oceanbase_installer_type == 'tar'
+  tags: install
+
+- name: Install obdeploy package for OBD
+  shell: |
+    if command -v dnf >/dev/null 2>&1; then
+      dnf -y install /tmp/oceanbase-obdeploy.rpm
+    else
+      yum -y localinstall /tmp/oceanbase-obdeploy.rpm
+    fi
+  args:
+    executable: /bin/bash
+  when: oceanbase_installer_type == 'rpm'
+  tags: install
+
+- name: Verify OceanBase environment script exists for tar installer
+  stat:
+    path: "{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin/env.sh"
+  register: oceanbase_env_script
+  when: oceanbase_installer_type == 'tar'
+
+- name: Fail when OceanBase tar install did not provide env.sh
+  fail:
+    msg: "OceanBase install is incomplete on {{ inventory_hostname }}. Missing {{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin/env.sh"
+  when:
+    - oceanbase_installer_type == 'tar'
+    - not oceanbase_env_script.stat.exists
+
+- name: Verify OBD command is available for RPM installer
+  command: bash -lc 'command -v obd'
+  register: obd_binary_check
+  changed_when: false
+  failed_when: obd_binary_check.rc != 0
+  when: oceanbase_installer_type == 'rpm'
+
+- name: Source OceanBase environment
+  lineinfile:
+    path: "{{ oceanbase_admin_home }}/.bashrc"
+    regexp: '^source ~/.oceanbase-all-in-one/bin/env.sh$'
+    state: absent
+  become_user: "{{ oceanbase_admin_user }}"
+
+- name: Source OceanBase environment
+  lineinfile:
+    path: "{{ oceanbase_admin_home }}/.bashrc"
+    regexp: '(^source ~/.oceanbase-all-in-one/bin/env.sh$)|(^\[ -f ~/.oceanbase-all-in-one/bin/env.sh \] && source ~/.oceanbase-all-in-one/bin/env.sh$)'
+    line: '[ -f ~/.oceanbase-all-in-one/bin/env.sh ] && source ~/.oceanbase-all-in-one/bin/env.sh'
+    create: yes
+  become_user: "{{ oceanbase_admin_user }}"
+  when: oceanbase_installer_type == 'tar'
+
+- name: Set OBD command wrapper
+  set_fact:
+    oceanbase_obd_cmd_prefix: "{{ 'source ~/.oceanbase-all-in-one/bin/env.sh && ' if oceanbase_installer_type == 'tar' else '' }}"
+
+- name: Set OBD controller host
+  set_fact:
+    oceanbase_obd_controller_host: "{{ groups['oceanbase'][0] }}"
+  run_once: true
+
+- name: Query latest OceanBase release metadata
+  uri:
+    url: https://api.github.com/repos/oceanbase/oceanbase/releases/latest
+    return_content: true
+  register: oceanbase_release_metadata
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - oceanbase_installer_type == 'rpm'
+    - oceanbase_seed_local_mirror_from_github | bool
+
+- name: Select OceanBase component RPM URLs from latest release
+  set_fact:
+    oceanbase_component_rpms:
+      - name: oceanbase-ce
+        url: "{{ (oceanbase_release_metadata.json.assets | default([]) | selectattr('name', 'match', '^oceanbase-ce-.*\\.' ~ oceanbase_target_os_tag ~ '\\.' ~ oceanbase_target_arch ~ '\\.rpm$') | map(attribute='browser_download_url') | list | first | default('')) }}"
+      - name: oceanbase-ce-libs
+        url: "{{ (oceanbase_release_metadata.json.assets | default([]) | selectattr('name', 'match', '^oceanbase-ce-libs-.*\\.' ~ oceanbase_target_os_tag ~ '\\.' ~ oceanbase_target_arch ~ '\\.rpm$') | map(attribute='browser_download_url') | list | first | default('')) }}"
+      - name: oceanbase-ce-sql-parser
+        url: "{{ (oceanbase_release_metadata.json.assets | default([]) | selectattr('name', 'match', '^oceanbase-ce-sql-parser-.*\\.' ~ oceanbase_target_os_tag ~ '\\.' ~ oceanbase_target_arch ~ '\\.rpm$') | map(attribute='browser_download_url') | list | first | default('')) }}"
+      - name: oceanbase-ce-utils
+        url: "{{ (oceanbase_release_metadata.json.assets | default([]) | selectattr('name', 'match', '^oceanbase-ce-utils-.*\\.' ~ oceanbase_target_os_tag ~ '\\.' ~ oceanbase_target_arch ~ '\\.rpm$') | map(attribute='browser_download_url') | list | first | default('')) }}"
+  when:
+    - oceanbase_installer_type == 'rpm'
+    - oceanbase_seed_local_mirror_from_github | bool
+
+- name: Fail when OceanBase server RPM is missing in latest release
+  fail:
+    msg: "No oceanbase-ce RPM was found for {{ oceanbase_target_os_tag }} {{ oceanbase_target_arch }} in the latest OceanBase release."
+  when:
+    - oceanbase_installer_type == 'rpm'
+    - oceanbase_seed_local_mirror_from_github | bool
+    - (oceanbase_component_rpms | selectattr('name', 'equalto', 'oceanbase-ce') | map(attribute='url') | list | first | default('')) | length == 0
+
+- name: Download OceanBase component RPMs for local OBD mirror
+  get_url:
+    url: "{{ item.url }}"
+    dest: "/tmp/{{ item.url | basename }}"
+    mode: '0644'
+  loop: "{{ oceanbase_component_rpms }}"
+  when:
+    - oceanbase_installer_type == 'rpm'
+    - oceanbase_seed_local_mirror_from_github | bool
+    - item.url | length > 0
+
+- name: Disable remote OBD mirrors to prioritize local packages
+  shell: |
+    obd mirror disable remote || true
+  become_user: "{{ oceanbase_admin_user }}"
+  when:
+    - oceanbase_installer_type == 'rpm'
+    - oceanbase_seed_local_mirror_from_github | bool
+
+- name: Clone downloaded OceanBase RPMs into local OBD mirror
+  shell: |
+    obd mirror clone /tmp/{{ item.url | basename }} -f
+  become_user: "{{ oceanbase_admin_user }}"
+  loop: "{{ oceanbase_component_rpms }}"
+  when:
+    - oceanbase_installer_type == 'rpm'
+    - oceanbase_seed_local_mirror_from_github | bool
+    - item.url | length > 0
+
+- name: Show local OBD mirror packages
+  shell: |
+    obd mirror list local
+  become_user: "{{ oceanbase_admin_user }}"
+  register: oceanbase_local_mirror_list
+  changed_when: false
+  when:
+    - oceanbase_installer_type == 'rpm'
+    - oceanbase_seed_local_mirror_from_github | bool
+
+- name: Display local OBD mirror summary
+  debug:
+    var: oceanbase_local_mirror_list.stdout
+  when:
+    - oceanbase_installer_type == 'rpm'
+    - oceanbase_seed_local_mirror_from_github | bool
+    - oceanbase_local_mirror_list.stdout is defined
+
+- name: Update /etc/hosts with all observer nodes
+  blockinfile:
+    path: /etc/hosts
+    block: |
+      {% for host in groups['oceanbase'] %}
+      {{ hostvars[host]['private_ip'] | default(hostvars[host]['ansible_host']) }} {{ host }}
+      {% endfor %}
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - OceanBase hosts"
+
+- name: Read OBD controller admin public key
+  slurp:
+    src: "{{ oceanbase_admin_home }}/.ssh/id_rsa.pub"
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  register: oceanbase_controller_pubkey
+  tags: ssh_trust
+
+- name: Authorize OBD controller key on all observer nodes
+  authorized_key:
+    user: "{{ oceanbase_admin_user }}"
+    state: present
+    key: "{{ oceanbase_controller_pubkey.content | b64decode | trim }}"
+  tags: ssh_trust
+
+- name: Generate cluster deployment YAML
+  template:
+    src: obcluster.yaml.j2
+    dest: "{{ oceanbase_admin_home }}/obcluster.yaml"
+    owner: "{{ oceanbase_admin_user }}"
+    group: "{{ oceanbase_admin_group }}"
+    mode: '0644'
+  become_user: "{{ oceanbase_admin_user }}"
+  tags: config
+
+- name: Check existing OceanBase cluster cached status
+  shell: |
+    {{ oceanbase_obd_cmd_prefix }}obd cluster list | awk -F'|' '/\|[[:space:]]*{{ oceanbase_cluster_name }}[[:space:]]*\|/ {gsub(/[[:space:]]/, "", $4); print tolower($4)}'
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become_user: "{{ oceanbase_admin_user }}"
+  environment:
+    PATH: "{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin"
+  register: oceanbase_cluster_cached_status_cmd
+  changed_when: false
+  failed_when: false
+
+- name: Set existing OceanBase cluster cached status fact
+  set_fact:
+    oceanbase_cluster_cached_status: "{{ oceanbase_cluster_cached_status_cmd.stdout | trim | lower }}"
+  run_once: true
+
+- name: Set whether existing cluster should use redeploy path
+  set_fact:
+    oceanbase_needs_destroy_before_deploy: "{{ (oceanbase_obd_recreate_existing_cluster | bool) and ((oceanbase_cluster_cached_status | default('')) in (oceanbase_obd_redeploy_statuses | default([]))) }}"
+  run_once: true
+
+- name: Destroy existing OceanBase cluster before fresh deploy
+  shell: |
+    {{ oceanbase_obd_cmd_prefix }}obd cluster destroy {{ oceanbase_cluster_name }} --confirm -f
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become_user: "{{ oceanbase_admin_user }}"
+  environment:
+    PATH: "{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin"
+  when:
+    - oceanbase_needs_destroy_before_deploy | bool
+  register: oceanbase_obd_destroy
+  failed_when: oceanbase_obd_destroy.rc != 0
+
+- name: Clean OceanBase work directories on all observers before fresh deploy
+  shell: |
+    rm -rf {{ oceanbase_server_dir }}/* {{ oceanbase_data_dir }}/* {{ oceanbase_redo_dir }}/*
+    mkdir -p {{ oceanbase_server_dir }} {{ oceanbase_data_dir }} {{ oceanbase_redo_dir }}
+    chown -R {{ oceanbase_admin_user }}:{{ oceanbase_admin_group }} {{ oceanbase_server_dir }} {{ oceanbase_data_dir }} {{ oceanbase_redo_dir }}
+  delegate_to: "{{ item }}"
+  run_once: true
+  loop: "{{ groups['oceanbase'] }}"
+  become: true
+  when:
+    - oceanbase_obd_clean_workdirs_before_fresh_deploy | bool
+
+- name: Deploy OceanBase cluster using OBD
+  shell: |
+    {{ oceanbase_obd_cmd_prefix }}obd cluster deploy {{ '-f ' if (oceanbase_obd_force_deploy | bool) else '' }}{{ oceanbase_cluster_name }} -c {{ oceanbase_admin_home }}/obcluster.yaml
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become_user: "{{ oceanbase_admin_user }}"
+  environment:
+    PATH: "{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin"
+  register: obd_deploy
+  failed_when: obd_deploy.rc != 0
+  tags: deploy
+
+- name: Display deployment result
+  debug:
+    var: obd_deploy.stdout
+  when: obd_deploy.stdout is defined
+
+- name: Start OceanBase cluster
+  shell: |
+    {{ oceanbase_obd_cmd_prefix }}obd cluster start {{ oceanbase_cluster_name }}
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become_user: "{{ oceanbase_admin_user }}"
+  environment:
+    PATH: "{{ oceanbase_admin_home }}/.local/bin:{{ oceanbase_admin_home }}/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:{{ oceanbase_admin_home }}/.oceanbase-all-in-one/bin"
+  register: obd_start
+  failed_when: obd_start.rc != 0
+  tags: start
+
+- name: List OceanBase clusters
+  shell: |
+    {{ oceanbase_obd_cmd_prefix }}obd cluster list
+  delegate_to: "{{ oceanbase_obd_controller_host }}"
+  run_once: true
+  become_user: "{{ oceanbase_admin_user }}"
+  register: cluster_list
+  changed_when: false
+  failed_when: cluster_list.rc != 0
+  tags: list
+
+- name: Display cluster information
+  debug:
+    var: cluster_list.stdout
+  when: cluster_list.stdout is defined
+
+- name: Verify OceanBase cluster is running
+  assert:
+    that:
+      - "'running' in (cluster_list.stdout | lower)"
+    fail_msg: "OceanBase cluster {{ oceanbase_cluster_name }} is not RUNNING on {{ inventory_hostname }}"
+    success_msg: "OceanBase cluster {{ oceanbase_cluster_name }} is RUNNING on {{ inventory_hostname }}"
+  run_once: true
+
+- name: Wait for OceanBase SQL port to be reachable on all observers
+  wait_for:
+    host: "{{ hostvars[item]['ansible_host'] }}"
+    port: "{{ oceanbase_mysql_port }}"
+    timeout: 120
+    state: started
+  delegate_to: localhost
+  become: false
+  loop: "{{ groups['oceanbase'] }}"
+  run_once: true

@@ -1,0 +1,59 @@
+---
+# Default variables for OceanBase role
+
+oceanbase_cluster_name: "ob_cluster"
+oceanbase_root_password: "OceanBase#!123"
+oceanbase_memory_limit: "8G"
+oceanbase_cpu_count: 8
+oceanbase_data_disk_size_gb: 500
+oceanbase_redo_disk_size_gb: 200
+oceanbase_data_mount_point: /oceanbase/data
+oceanbase_redo_mount_point: /oceanbase/redo
+oceanbase_data_disk_device: ""
+oceanbase_redo_disk_device: ""
+oceanbase_disk_filesystem: xfs
+oceanbase_disk_auto_detect_by_size: true
+# Storage sizing when data disk is mounted.
+oceanbase_datafile_size_gb: 166
+oceanbase_datafile_maxsize_gb: 200
+oceanbase_log_disk_size_gb: 190
+# Storage sizing fallback when data/log are placed on root disk (skip_data_mount=true).
+oceanbase_datafile_size_gb_no_data_disk: 40
+oceanbase_datafile_maxsize_gb_no_data_disk: 60
+oceanbase_log_disk_size_gb_no_data_disk: 40
+oceanbase_mysql_port: 2881
+oceanbase_rpc_port: 2882
+oceanbase_obshell_port: 2886
+# Supports either an old all-in-one tarball URL or an obdeploy RPM URL.
+oceanbase_all_in_one_url: "https://github.com/oceanbase/obdeploy/releases/download/v4.2.0/ob-deploy-4.2.0-1.el7.x86_64.rpm"
+oceanbase_obd_component: "oceanbase-ce"
+# Leave empty to let OBD resolve the latest available package version from enabled mirrors.
+oceanbase_obd_version: ""
+# Use force deploy so reruns can recover from pre-created /oceanbase/server content.
+oceanbase_obd_force_deploy: true
+# Recreate existing cluster state before deployment so reruns are deterministic.
+oceanbase_obd_recreate_existing_cluster: true
+# Only these cached statuses should use `obd cluster redeploy`.
+oceanbase_obd_redeploy_statuses:
+  - deployed
+  - running
+  - stopped
+# Clean OceanBase work directories before fresh deploy (for destroyed/absent cluster state).
+oceanbase_obd_clean_workdirs_before_fresh_deploy: true
+oceanbase_seed_local_mirror_from_github: true
+oceanbase_target_os_tag: "el7"
+oceanbase_target_arch: "x86_64"
+oceanbase_strict_mount_check: true
+oceanbase_skip_data_mount: false
+
+# Deployment paths
+oceanbase_admin_user: oceanadmin
+oceanbase_admin_group: oceanadmin
+oceanbase_admin_home: /home/oceanadmin
+oceanbase_home_dir: /home/oceanadmin/oceanbase
+oceanbase_data_dir: /oceanbase/data
+oceanbase_redo_dir: /oceanbase/redo
+oceanbase_server_dir: /oceanbase/server
+
+# System configuration
+oceanbase_ssh_port: 22

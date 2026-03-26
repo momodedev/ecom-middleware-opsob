@@ -1,0 +1,438 @@
+---
+- name: Run OceanBase sysbench benchmark and export CSV
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  become: true
+  vars:
+    benchmark_label: "ob_cluster"
+    benchmark_output_dir: "/tmp/oceanbase-bench"
+    benchmark_output_csv: "{{ benchmark_output_dir }}/{{ benchmark_label }}.csv"
+
+    mysql_host: "127.0.0.1"
+    mysql_port: 2881
+    mysql_user: "root@sbtest_tenant"
+    mysql_password: "OceanBase#!123"
+    mysql_db: "sbtest"
+
+    # Tenant configuration for benchmark
+    benchmark_tenant_name: "sbtest_tenant"
+    benchmark_tenant_password: "OceanBase#!123"
+    benchmark_tenant_max_cpu: 6
+    benchmark_tenant_min_cpu: 6
+    benchmark_tenant_memory_size: "20G"
+    benchmark_tenant_log_disk_size: "40G"
+
+    benchmark_tables: 10
+    benchmark_table_size: 100000
+    benchmark_warmup_sec: 30
+    benchmark_run_sec: 120
+    benchmark_report_interval: 10
+
+    benchmark_threads:
+      - 16
+      - 32
+      - 64
+      - 128
+      - 256
+    benchmark_workloads:
+      - oltp_read_only
+      - oltp_write_only
+      - oltp_read_write
+
+    benchmark_prepare_data: true
+    benchmark_cleanup_data: false
+    benchmark_cleanup_before_prepare: true
+    benchmark_recreate_db_before_prepare: true
+    benchmark_force_reprepare: false
+    benchmark_prepare_retries: 3
+    benchmark_prepare_retry_delay: 5
+    benchmark_fail_on_case_error: false
+
+  tasks:
+    - name: Ensure benchmark output directory exists
+      file:
+        path: "{{ benchmark_output_dir }}"
+        state: directory
+        mode: "0755"
+
+    # ---- Create dedicated benchmark tenant (distributes load across all zones) ----
+
+    - name: Install MySQL client on RedHat family
+      dnf:
+        name: mariadb
+        state: present
+      when: ansible_facts['os_family'] == 'RedHat'
+
+    - name: Install MySQL client on Debian family
+      apt:
+        name: default-mysql-client
+        state: present
+        update_cache: true
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Check if benchmark tenant already exists
+      shell: |
+        mysql -h {{ mysql_host }} -P {{ mysql_port }} -uroot@sys -p'{{ benchmark_tenant_password }}' -Doceanbase -N \
+          -e "SELECT COUNT(*) FROM __all_tenant WHERE tenant_name='{{ benchmark_tenant_name }}';"
+      register: tenant_exists_check
+      changed_when: false
+      failed_when: false
+
+    - name: Create benchmark unit config
+      shell: |
+        mysql -h {{ mysql_host }} -P {{ mysql_port }} -uroot@sys -p'{{ benchmark_tenant_password }}' -Doceanbase \
+          -e "CREATE RESOURCE UNIT IF NOT EXISTS sbtest_unit
+              MAX_CPU = {{ benchmark_tenant_max_cpu }},
+              MIN_CPU = {{ benchmark_tenant_min_cpu }},
+              MEMORY_SIZE = '{{ benchmark_tenant_memory_size }}',
+              LOG_DISK_SIZE = '{{ benchmark_tenant_log_disk_size }}';"
+      when: tenant_exists_check.stdout | default('0') | trim == '0'
+
+    - name: Create benchmark resource pool
+      shell: |
+        mysql -h {{ mysql_host }} -P {{ mysql_port }} -uroot@sys -p'{{ benchmark_tenant_password }}' -Doceanbase \
+          -e "CREATE RESOURCE POOL IF NOT EXISTS sbtest_pool
+              UNIT = 'sbtest_unit',
+              UNIT_NUM = 1,
+              ZONE_LIST = ('zone1', 'zone2', 'zone3');"
+      when: tenant_exists_check.stdout | default('0') | trim == '0'
+
+    - name: Create benchmark tenant
+      shell: |
+        mysql -h {{ mysql_host }} -P {{ mysql_port }} -uroot@sys -p'{{ benchmark_tenant_password }}' -Doceanbase \
+          -e "CREATE TENANT IF NOT EXISTS {{ benchmark_tenant_name }}
+              RESOURCE_POOL_LIST = ('sbtest_pool'),
+              PRIMARY_ZONE = 'RANDOM',
+              LOCALITY = \"FULL{1}@zone1, FULL{1}@zone2, FULL{1}@zone3\"
+              SET ob_tcp_invited_nodes = '%';"
+      when: tenant_exists_check.stdout | default('0') | trim == '0'
+
+    - name: Set benchmark tenant root password
+      shell: |
+        mysql -h {{ mysql_host }} -P {{ mysql_port }} -uroot@{{ benchmark_tenant_name }} -Doceanbase \
+          -e "ALTER USER root IDENTIFIED BY '{{ benchmark_tenant_password }}';"
+      when: tenant_exists_check.stdout | default('0') | trim == '0'
+      failed_when: false
+
+    - name: Wait for tenant to be ready
+      shell: |
+        mysql -h {{ mysql_host }} -P {{ mysql_port }} -uroot@{{ benchmark_tenant_name }} -p'{{ benchmark_tenant_password }}' \
+          -e "SELECT 1;" 2>&1
+      register: tenant_ready
+      retries: 30
+      delay: 5
+      until: tenant_ready.rc == 0
+
+    - name: Install sysbench on Debian family
+      apt:
+        name: sysbench
+        state: present
+        update_cache: true
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Install sysbench on RedHat family
+      dnf:
+        name: sysbench
+        state: present
+      when: ansible_facts['os_family'] == 'RedHat'
+
+    - name: Initialize CSV header
+      copy:
+        dest: "{{ benchmark_output_csv }}"
+        mode: "0644"
+        content: "timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors,exit_code,status\n"
+
+    - name: Set benchmark OBD controller host
+      set_fact:
+        benchmark_obd_controller_host: "{{ groups['oceanbase'][0] }}"
+      when: groups['oceanbase'] is defined and (groups['oceanbase'] | length) > 0
+
+    - name: Initial preflight check for OceanBase MySQL endpoint reachability
+      wait_for:
+        host: "{{ mysql_host }}"
+        port: "{{ mysql_port }}"
+        timeout: 10
+        state: started
+      register: benchmark_preflight_initial
+      failed_when: false
+
+    - name: Start OceanBase cluster when endpoint is unreachable
+      shell: |
+        set -euo pipefail
+        sudo -u oceanadmin obd cluster start ob_cluster
+      delegate_to: "{{ benchmark_obd_controller_host }}"
+      register: benchmark_cluster_start_result
+      when:
+        - benchmark_preflight_initial is defined
+        - benchmark_preflight_initial.failed | default(false)
+        - benchmark_obd_controller_host is defined
+
+    - name: Final preflight check for OceanBase MySQL endpoint reachability
+      wait_for:
+        host: "{{ mysql_host }}"
+        port: "{{ mysql_port }}"
+        timeout: 120
+        state: started
+
+    - name: Display cluster start output
+      debug:
+        var: benchmark_cluster_start_result.stdout
+      when: benchmark_cluster_start_result is defined
+
+    - name: Resolve effective MySQL password from CLI or environment
+      set_fact:
+        mysql_password_effective: "{{ lookup('env', 'OCEANBASE_BENCH_PASSWORD') if mysql_password == '-' else mysql_password }}"
+
+    - name: Fail when MySQL password is missing
+      fail:
+        msg: "MySQL password is empty. Pass it explicitly or set OCEANBASE_BENCH_PASSWORD in environment."
+      when: mysql_password_effective | length == 0
+
+    - name: Check whether benchmark database exists
+      shell: |
+        set -euo pipefail
+        if command -v obclient >/dev/null 2>&1; then
+          obclient \
+            -h {{ mysql_host | quote }} \
+            -P {{ mysql_port }} \
+            -u {{ mysql_user | quote }} \
+            -p{{ mysql_password_effective | quote }} \
+            -A -N \
+            -e "SHOW DATABASES LIKE '{{ mysql_db }}';"
+        else
+          mysql \
+            -h {{ mysql_host | quote }} \
+            -P {{ mysql_port }} \
+            -u {{ mysql_user | quote }} \
+            -p{{ mysql_password_effective | quote }} \
+            -N -e "SHOW DATABASES LIKE '{{ mysql_db }}';"
+        fi
+      register: benchmark_db_exists_query
+      changed_when: false
+
+    - name: Set benchmark database existence fact
+      set_fact:
+        benchmark_db_exists: "{{ (benchmark_db_exists_query.stdout | trim) == mysql_db }}"
+
+    - name: Ensure benchmark database exists
+      shell: |
+        set -euo pipefail
+        if command -v obclient >/dev/null 2>&1; then
+          obclient \
+            -h {{ mysql_host | quote }} \
+            -P {{ mysql_port }} \
+            -u {{ mysql_user | quote }} \
+            -p{{ mysql_password_effective | quote }} \
+            -A \
+            -e "CREATE DATABASE IF NOT EXISTS {{ mysql_db }};"
+        elif command -v mysql >/dev/null 2>&1; then
+          mysql \
+            -h {{ mysql_host | quote }} \
+            -P {{ mysql_port }} \
+            -u {{ mysql_user | quote }} \
+            -p{{ mysql_password_effective | quote }} \
+            -e "CREATE DATABASE IF NOT EXISTS {{ mysql_db }};"
+        else
+          echo "Neither obclient nor mysql client is available on benchmark host" >&2
+          exit 1
+        fi
+      when: not benchmark_db_exists | bool
+
+    - name: Check whether benchmark tables already exist
+      shell: |
+        set -euo pipefail
+        if command -v obclient >/dev/null 2>&1; then
+          obclient \
+            -h {{ mysql_host | quote }} \
+            -P {{ mysql_port }} \
+            -u {{ mysql_user | quote }} \
+            -p{{ mysql_password_effective | quote }} \
+            -A -N \
+            -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{{ mysql_db }}' AND table_name='sbtest1';"
+        else
+          mysql \
+            -h {{ mysql_host | quote }} \
+            -P {{ mysql_port }} \
+            -u {{ mysql_user | quote }} \
+            -p{{ mysql_password_effective | quote }} \
+            -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{{ mysql_db }}' AND table_name='sbtest1';"
+        fi
+      register: benchmark_table_exists_query
+      changed_when: false
+      when: benchmark_db_exists | bool
+
+    - name: Set benchmark dataset prepared fact
+      set_fact:
+        benchmark_dataset_prepared: "{{ (benchmark_table_exists_query.stdout | trim | int) > 0 if (benchmark_table_exists_query is defined and benchmark_table_exists_query.stdout is defined and benchmark_table_exists_query.stdout | trim != '') else false }}"
+
+    - name: Cleanup existing sysbench data set before prepare
+      shell: |
+        set -euo pipefail
+        sysbench /usr/share/sysbench/oltp_common.lua \
+          --db-driver=mysql \
+          --mysql-host={{ mysql_host | quote }} \
+          --mysql-port={{ mysql_port }} \
+          --mysql-user={{ mysql_user | quote }} \
+          --mysql-password={{ mysql_password_effective | quote }} \
+          --mysql-db={{ mysql_db | quote }} \
+          --tables={{ benchmark_tables }} \
+          --table-size={{ benchmark_table_size }} \
+          cleanup
+      register: benchmark_pre_cleanup
+      failed_when: false
+      changed_when: benchmark_pre_cleanup.rc == 0
+      when:
+        - benchmark_prepare_data | bool
+        - benchmark_cleanup_before_prepare | bool
+        - not benchmark_recreate_db_before_prepare | bool
+        - benchmark_force_reprepare | bool
+
+    - name: Recreate benchmark database before prepare
+      shell: |
+        set -euo pipefail
+        if command -v obclient >/dev/null 2>&1; then
+          obclient \
+            -h {{ mysql_host | quote }} \
+            -P {{ mysql_port }} \
+            -u {{ mysql_user | quote }} \
+            -p{{ mysql_password_effective | quote }} \
+            -A \
+            -e "DROP DATABASE IF EXISTS {{ mysql_db }}; CREATE DATABASE {{ mysql_db }};"
+        else
+          mysql \
+            -h {{ mysql_host | quote }} \
+            -P {{ mysql_port }} \
+            -u {{ mysql_user | quote }} \
+            -p{{ mysql_password_effective | quote }} \
+            -e "DROP DATABASE IF EXISTS {{ mysql_db }}; CREATE DATABASE {{ mysql_db }};"
+        fi
+      register: benchmark_recreate_db_result
+      retries: "{{ benchmark_prepare_retries }}"
+      delay: "{{ benchmark_prepare_retry_delay }}"
+      until: benchmark_recreate_db_result.rc == 0
+      when:
+        - benchmark_prepare_data | bool
+        - benchmark_recreate_db_before_prepare | bool
+        - benchmark_force_reprepare | bool
+
+    - name: Prepare sysbench data set
+      shell: |
+        set -euo pipefail
+        sysbench /usr/share/sysbench/oltp_common.lua \
+          --db-driver=mysql \
+          --mysql-host={{ mysql_host | quote }} \
+          --mysql-port={{ mysql_port }} \
+          --mysql-user={{ mysql_user | quote }} \
+          --mysql-password={{ mysql_password_effective | quote }} \
+          --mysql-db={{ mysql_db | quote }} \
+          --tables={{ benchmark_tables }} \
+          --table-size={{ benchmark_table_size }} \
+          prepare
+      register: benchmark_prepare_result
+      retries: "{{ benchmark_prepare_retries }}"
+      delay: "{{ benchmark_prepare_retry_delay }}"
+      until: benchmark_prepare_result.rc == 0
+      when: benchmark_prepare_data | bool and ((benchmark_force_reprepare | bool) or not (benchmark_dataset_prepared | default(false) | bool))
+
+    - name: Announce reuse of existing benchmark dataset
+      debug:
+        msg: "Reusing existing sysbench dataset in database {{ mysql_db }} (sbtest1 exists); skipping prepare phase."
+      when:
+        - benchmark_prepare_data | bool
+        - not benchmark_force_reprepare | bool
+        - benchmark_dataset_prepared | default(false) | bool
+
+    - name: Run benchmark matrix and collect CSV
+      shell: |
+        set -uo pipefail
+        now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        result_file=$(mktemp)
+        sysbench /usr/share/sysbench/{{ item.0 }}.lua \
+          --db-driver=mysql \
+          --mysql-host={{ mysql_host | quote }} \
+          --mysql-port={{ mysql_port }} \
+          --mysql-user={{ mysql_user | quote }} \
+          --mysql-password={{ mysql_password_effective | quote }} \
+          --mysql-db={{ mysql_db | quote }} \
+          --tables={{ benchmark_tables }} \
+          --table-size={{ benchmark_table_size }} \
+          --threads={{ item.1 }} \
+          --time={{ benchmark_run_sec }} \
+          --report-interval={{ benchmark_report_interval }} \
+          --db-ps-mode=disable \
+          run >"$result_file" 2>&1
+        rc=$?
+        result="$(cat "$result_file")"
+        rm -f "$result_file"
+
+        tps=$(echo "$result" | awk -F'[()]' '/transactions:/ {gsub(/ per sec\./, "", $2); print $2}' | awk '{print $1}' | tail -1)
+        p95=$(echo "$result" | awk '/95th percentile:/ {print $3}' | tail -1)
+        avg_lat=$(echo "$result" | awk '/avg:/ {print $2}' | tail -1)
+        total_q=$(echo "$result" | awk '/^[[:space:]]*queries:[[:space:]]+[0-9]+/ {print $2}' | tail -1)
+        if [ -z "${total_q:-}" ]; then
+          total_q=$(echo "$result" | awk '/^[[:space:]]*total:[[:space:]]+[0-9]+/ {print $2}' | tail -1)
+        fi
+        if [ -z "${total_q:-}" ]; then
+          total_q=$(echo "$result" | awk '/^[[:space:]]*transactions:[[:space:]]+[0-9]+/ {print $2}' | tail -1)
+        fi
+        total_q=$(echo "${total_q:-0}" | tr -d ',')
+        errs=$(echo "$result" | awk -F': ' '/ignored errors:/ {print $2}' | awk '{print $1}' | tail -1)
+
+        tps=${tps:-0}
+        p95=${p95:-0}
+        avg_lat=${avg_lat:-0}
+        total_q=${total_q:-0}
+        errs=${errs:-0}
+        status="ok"
+
+        if [ "$rc" -ne 0 ]; then
+          status="failed"
+        fi
+
+        echo "$now,{{ benchmark_label }},{{ item.0 }},{{ item.1 }},$tps,$p95,$avg_lat,$total_q,$errs,$rc,$status" >> {{ benchmark_output_csv | quote }}
+
+        if [ "$rc" -ne 0 ]; then
+          echo "Benchmark case failed: workload={{ item.0 }} threads={{ item.1 }} rc=$rc" >&2
+          echo "$result" >&2
+          exit "$rc"
+        fi
+
+        echo "Benchmark case succeeded: workload={{ item.0 }} threads={{ item.1 }}"
+      loop: "{{ benchmark_workloads | product(benchmark_threads) | list }}"
+      loop_control:
+        label: "{{ item.0 }} threads={{ item.1 }}"
+      register: benchmark_case_runs
+      failed_when: false
+
+    - name: Summarize failed benchmark cases
+      debug:
+        msg: "{{ item.item.0 }} threads={{ item.item.1 }} failed with rc={{ item.rc }}"
+      loop: "{{ benchmark_case_runs.results | selectattr('rc', 'ne', 0) | list }}"
+      when: benchmark_case_runs is defined
+
+    - name: Fail when benchmark case errors are present and fail-fast is enabled
+      fail:
+        msg: "Some benchmark matrix cases failed. See task output for failing workload/thread combinations."
+      when:
+        - benchmark_fail_on_case_error | bool
+        - (benchmark_case_runs.results | selectattr('rc', 'ne', 0) | list | length) > 0
+
+    - name: Cleanup sysbench data set
+      shell: |
+        set -euo pipefail
+        sysbench /usr/share/sysbench/oltp_common.lua \
+          --db-driver=mysql \
+          --mysql-host={{ mysql_host | quote }} \
+          --mysql-port={{ mysql_port }} \
+          --mysql-user={{ mysql_user | quote }} \
+          --mysql-password={{ mysql_password_effective | quote }} \
+          --mysql-db={{ mysql_db | quote }} \
+          --tables={{ benchmark_tables }} \
+          --table-size={{ benchmark_table_size }} \
+          cleanup
+      when: benchmark_cleanup_data | bool
+
+    - name: Show benchmark CSV path
+      debug:
+        msg: "Benchmark complete. CSV saved to {{ benchmark_output_csv }}"
