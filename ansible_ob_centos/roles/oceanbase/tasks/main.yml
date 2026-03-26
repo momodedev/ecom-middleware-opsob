@@ -139,7 +139,7 @@
         echo "/dev/$parent"
       fi
     done | sort -u)
-    lsblk -dnbo PATH,SIZE,TYPE | awk '$3=="disk" {print $1" "$2}' | while read -r dev size; do
+    lsblk -dnpbo NAME,SIZE,TYPE | awk '$3=="disk" {print $1" "$2}' | while read -r dev size; do
       if echo "$mounted_parents" | grep -qx "$dev"; then
         continue
       fi
@@ -174,7 +174,7 @@
       fi
     done | sort -u)
 
-    lsblk -dnbo PATH,SIZE,TYPE | awk '$3=="disk" {print $1" "$2}' | while read -r dev size; do
+    lsblk -dnpbo NAME,SIZE,TYPE | awk '$3=="disk" {print $1" "$2}' | while read -r dev size; do
       if echo "$mounted_parents" | grep -qx "$dev"; then
         continue
       fi
@@ -211,7 +211,7 @@
       fi
     done | sort -u)
 
-    lsblk -dnbo PATH,SIZE,TYPE | awk '$3=="disk" {print $1" "$2}' | while read -r dev size; do
+    lsblk -dnpbo NAME,SIZE,TYPE | awk '$3=="disk" {print $1" "$2}' | while read -r dev size; do
       if [ "$dev" = "{{ oceanbase_data_disk_device_resolved | default('') }}" ]; then
         continue
       fi
