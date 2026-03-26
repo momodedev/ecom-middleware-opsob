@@ -67,8 +67,26 @@ runcmd:
   - id -u oceanbase >/dev/null 2>&1 || useradd -r -g oceanbase -s /bin/bash oceanbase || true
   
   # Format and mount OceanBase data and redo disks (supports Azure SCSI and NVMe/PremiumV2)
+  # Note: Data disks are attached by Terraform AFTER the VM boots, so we must
+  # wait for them to appear. Do NOT use 'set -e' here — it aborts the entire
+  # runcmd script (all entries share one shell) and blocks the OS upgrade.
   - |
-    set -euxo pipefail
+    set -uxo pipefail
+
+    # Wait up to 5 minutes for data disks to be attached by Terraform
+    echo "Waiting for data disks to be attached..."
+    disk_wait=0
+    while [ $disk_wait -lt 300 ]; do
+      if [ -e "/dev/disk/azure/data/by-lun/10" ] && [ -e "/dev/disk/azure/data/by-lun/11" ]; then
+        echo "Data disks found after $${disk_wait}s"
+        break
+      fi
+      sleep 10
+      disk_wait=$((disk_wait + 10))
+      if [ $((disk_wait % 60)) -eq 0 ]; then
+        echo "  Still waiting for data disks... ($${disk_wait}s elapsed)"
+      fi
+    done
 
     find_unmounted_disk_by_target_size() {
       target_size_bytes="$1"
@@ -85,6 +103,7 @@ runcmd:
       best_dev=""
       best_diff=""
 
+      lsblk -dnbo PATH,SIZE,TYPE > /tmp/_ci_disks.txt
       while read -r dev size type; do
         [ "$type" = "disk" ] || continue
         [ "$dev" = "$exclude_dev" ] && continue
@@ -97,9 +116,8 @@ runcmd:
           best_diff="$diff"
           best_dev="$dev"
         fi
-      done <<EOF
-$(lsblk -dnbo PATH,SIZE,TYPE)
-EOF
+      done < /tmp/_ci_disks.txt
+      rm -f /tmp/_ci_disks.txt
 
       echo "$best_dev"
     }
@@ -148,8 +166,16 @@ EOF
 
     echo "Resolved OceanBase cloud-init disks: data=$DATA_DISK_DEVICE redo=$REDO_DISK_DEVICE"
 
-    ensure_mount "$DATA_DISK_DEVICE" /oceanbase/data ${oceanbase_admin_username}
-    ensure_mount "$REDO_DISK_DEVICE" /oceanbase/redo ${oceanbase_admin_username}
+    if [ -n "$DATA_DISK_DEVICE" ]; then
+      ensure_mount "$DATA_DISK_DEVICE" /oceanbase/data ${oceanbase_admin_username} || echo "WARNING: failed to mount data disk"
+    else
+      echo "WARNING: data disk not found, skipping mount"
+    fi
+    if [ -n "$REDO_DISK_DEVICE" ]; then
+      ensure_mount "$REDO_DISK_DEVICE" /oceanbase/redo ${oceanbase_admin_username} || echo "WARNING: failed to mount redo disk"
+    else
+      echo "WARNING: redo disk not found, skipping mount"
+    fi
     chown ${oceanbase_admin_username}:${oceanbase_admin_username} /oceanbase /oceanbase/server || true
   
   # Set up Python environment for Ansible
@@ -214,12 +240,13 @@ EOF
       echo 0 > /proc/sys/kernel/numa_balancing
     fi
   
-  # Log cloud-init completion
+  # Log cloud-init bootstrap completion (before OS upgrade)
   - echo "Cloud-init bootstrap completed at $(date)" > /var/log/oceanbase-bootstrap-complete.log
 
   # Upgrade Rocky Linux to the current 9.7 baseline before handing over to Ansible
   - dnf -y upgrade --refresh
   - dnf clean all || true
+  - echo "OS upgrade completed at $(date). $(cat /etc/rocky-release)" > /var/log/oceanbase-upgrade-complete.log
 
 power_state:
   delay: now
