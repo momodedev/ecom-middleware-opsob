@@ -79,6 +79,27 @@
       changed_when: false
       failed_when: false
 
+    - name: Discover available zones from cluster
+      shell: |
+        mysql -h {{ mysql_host }} -P {{ mysql_port }} -uroot@sys -p'{{ benchmark_tenant_password }}' -Doceanbase -N \
+          -e "SELECT DISTINCT zone FROM __all_server WHERE status='active' ORDER BY zone;"
+      register: benchmark_zone_discovery
+      changed_when: false
+      failed_when: false
+
+    - name: Build zone SQL fragments for resource pool and tenant locality
+      set_fact:
+        benchmark_zone_list_sql: "{{ benchmark_zone_list | map('regex_replace', '^(.*)$', "'\\1'") | join(', ') }}"
+        benchmark_locality_sql: "{{ benchmark_zone_list | map('regex_replace', '^(.*)$', 'FULL{1}@\\1') | join(', ') }}"
+      vars:
+        benchmark_zone_list: >-
+          {{
+            (benchmark_zone_discovery.stdout_lines | default([])
+            | map('trim') | reject('equalto', '') | list)
+            if (benchmark_zone_discovery is defined and benchmark_zone_discovery.rc | default(1) == 0 and (benchmark_zone_discovery.stdout_lines | default([]) | length) > 0)
+            else ['zone1']
+          }}
+
     - name: Create benchmark unit config
       shell: |
         mysql -h {{ mysql_host }} -P {{ mysql_port }} -uroot@sys -p'{{ benchmark_tenant_password }}' -Doceanbase \
@@ -95,7 +116,7 @@
           -e "CREATE RESOURCE POOL IF NOT EXISTS sbtest_pool
               UNIT = 'sbtest_unit',
               UNIT_NUM = 1,
-              ZONE_LIST = ('zone1', 'zone2', 'zone3');"
+              ZONE_LIST = ({{ benchmark_zone_list_sql }});"
       when: tenant_exists_check.stdout | default('0') | trim == '0'
 
     - name: Create benchmark tenant
@@ -104,7 +125,7 @@
           -e "CREATE TENANT IF NOT EXISTS {{ benchmark_tenant_name }}
               RESOURCE_POOL_LIST = ('sbtest_pool'),
               PRIMARY_ZONE = 'RANDOM',
-              LOCALITY = \"FULL{1}@zone1, FULL{1}@zone2, FULL{1}@zone3\"
+              LOCALITY = \"{{ benchmark_locality_sql }}\"
               SET ob_tcp_invited_nodes = '%';"
       when: tenant_exists_check.stdout | default('0') | trim == '0'
 
