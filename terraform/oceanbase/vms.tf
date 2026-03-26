@@ -7,6 +7,20 @@ resource "azurerm_network_interface" "oceanbase_observers" {
   location            = local.oceanbase_rg_location
   resource_group_name = local.oceanbase_rg_name
 
+  # Sequence network mutations first to avoid long Azure control-plane contention
+  # between subnet NAT association, NSG rule updates, and NIC/VM provisioning.
+  depends_on = [
+    azurerm_subnet_nat_gateway_association.oceanbase,
+    azurerm_nat_gateway_public_ip_association.oceanbase,
+    azurerm_network_security_rule.ob_observer_ssh,
+    azurerm_network_security_rule.ob_mysql,
+    azurerm_network_security_rule.ob_rpc,
+    azurerm_network_security_rule.ob_obshell,
+    azurerm_network_security_rule.ob_monitoring,
+    azurerm_network_security_rule.ob_grafana_public,
+    azurerm_network_security_rule.ob_prometheus_public
+  ]
+
   ip_configuration {
     name                          = "ob-ip-config-${count.index}"
     subnet_id                     = local.oceanbase_subnet_id
@@ -42,6 +56,12 @@ resource "azurerm_linux_virtual_machine" "oceanbase_observers" {
 
   network_interface_ids = [
     azurerm_network_interface.oceanbase_observers[count.index].id
+  ]
+
+  depends_on = [
+    azurerm_network_interface.oceanbase_observers,
+    azurerm_subnet_nat_gateway_association.oceanbase,
+    azurerm_nat_gateway_public_ip_association.oceanbase
   ]
 
   # Add delay between VM creations to avoid Azure throttling
