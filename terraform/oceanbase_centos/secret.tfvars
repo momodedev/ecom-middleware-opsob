@@ -17,7 +17,7 @@ manage_network_security_rules = true
 # westus3 networking (new VNet with peering back to westus control VNet)
 centos_ob_vnet_address_space    = "10.100.0.0/16"
 centos_ob_subnet_address_prefix = "10.100.1.0/24"
-centos_ob_zones                 = ["2", "3", "4"]
+centos_ob_zones                 = ["2", "3", "2"]
 
 # OceanBase Database Parameters
 oceanbase_cluster_name      = "ob_cluster"
