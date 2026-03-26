@@ -11,9 +11,17 @@
 
     mysql_host: "127.0.0.1"
     mysql_port: 2881
-    mysql_user: "root@sys"
+    mysql_user: "root@sbtest_tenant"
     mysql_password: "OceanBase#!123"
     mysql_db: "sbtest"
+
+    # Tenant configuration for benchmark
+    benchmark_tenant_name: "sbtest_tenant"
+    benchmark_tenant_password: "OceanBase#!123"
+    benchmark_tenant_max_cpu: 6
+    benchmark_tenant_min_cpu: 6
+    benchmark_tenant_memory_size: "20G"
+    benchmark_tenant_log_disk_size: "40G"
 
     benchmark_tables: 10
     benchmark_table_size: 100000
@@ -48,16 +56,11 @@
         state: directory
         mode: "0755"
 
-    - name: Install sysbench on Debian family
-      apt:
-        name: sysbench
-        state: present
-        update_cache: true
-      when: ansible_facts['os_family'] == 'Debian'
+    # ---- Create dedicated benchmark tenant (distributes load across all zones) ----
 
-    - name: Install sysbench on RedHat family
+    - name: Install MySQL client on RedHat family
       dnf:
-        name: sysbench
+        name: mariadb
         state: present
       when: ansible_facts['os_family'] == 'RedHat'
 
@@ -68,9 +71,69 @@
         update_cache: true
       when: ansible_facts['os_family'] == 'Debian'
 
-    - name: Install MySQL client on RedHat family
+    - name: Check if benchmark tenant already exists
+      shell: |
+        mysql -h {{ mysql_host }} -P {{ mysql_port }} -uroot@sys -p'{{ benchmark_tenant_password }}' -Doceanbase -N \
+          -e "SELECT COUNT(*) FROM __all_tenant WHERE tenant_name='{{ benchmark_tenant_name }}';"
+      register: tenant_exists_check
+      changed_when: false
+      failed_when: false
+
+    - name: Create benchmark unit config
+      shell: |
+        mysql -h {{ mysql_host }} -P {{ mysql_port }} -uroot@sys -p'{{ benchmark_tenant_password }}' -Doceanbase \
+          -e "CREATE RESOURCE UNIT IF NOT EXISTS sbtest_unit
+              MAX_CPU = {{ benchmark_tenant_max_cpu }},
+              MIN_CPU = {{ benchmark_tenant_min_cpu }},
+              MEMORY_SIZE = '{{ benchmark_tenant_memory_size }}',
+              LOG_DISK_SIZE = '{{ benchmark_tenant_log_disk_size }}';"
+      when: tenant_exists_check.stdout | default('0') | trim == '0'
+
+    - name: Create benchmark resource pool
+      shell: |
+        mysql -h {{ mysql_host }} -P {{ mysql_port }} -uroot@sys -p'{{ benchmark_tenant_password }}' -Doceanbase \
+          -e "CREATE RESOURCE POOL IF NOT EXISTS sbtest_pool
+              UNIT = 'sbtest_unit',
+              UNIT_NUM = 1,
+              ZONE_LIST = ('zone1', 'zone2', 'zone3');"
+      when: tenant_exists_check.stdout | default('0') | trim == '0'
+
+    - name: Create benchmark tenant
+      shell: |
+        mysql -h {{ mysql_host }} -P {{ mysql_port }} -uroot@sys -p'{{ benchmark_tenant_password }}' -Doceanbase \
+          -e "CREATE TENANT IF NOT EXISTS {{ benchmark_tenant_name }}
+              RESOURCE_POOL_LIST = ('sbtest_pool'),
+              PRIMARY_ZONE = 'RANDOM',
+              LOCALITY = \"FULL{1}@zone1, FULL{1}@zone2, FULL{1}@zone3\"
+              SET ob_tcp_invited_nodes = '%';"
+      when: tenant_exists_check.stdout | default('0') | trim == '0'
+
+    - name: Set benchmark tenant root password
+      shell: |
+        mysql -h {{ mysql_host }} -P {{ mysql_port }} -uroot@{{ benchmark_tenant_name }} -Doceanbase \
+          -e "ALTER USER root IDENTIFIED BY '{{ benchmark_tenant_password }}';"
+      when: tenant_exists_check.stdout | default('0') | trim == '0'
+      failed_when: false
+
+    - name: Wait for tenant to be ready
+      shell: |
+        mysql -h {{ mysql_host }} -P {{ mysql_port }} -uroot@{{ benchmark_tenant_name }} -p'{{ benchmark_tenant_password }}' \
+          -e "SELECT 1;" 2>&1
+      register: tenant_ready
+      retries: 30
+      delay: 5
+      until: tenant_ready.rc == 0
+
+    - name: Install sysbench on Debian family
+      apt:
+        name: sysbench
+        state: present
+        update_cache: true
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Install sysbench on RedHat family
       dnf:
-        name: mariadb
+        name: sysbench
         state: present
       when: ansible_facts['os_family'] == 'RedHat'
 
