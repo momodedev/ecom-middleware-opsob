@@ -21,6 +21,7 @@ packages:
   - curl
   - wget
   - gnupg
+  - git
 
 runcmd:
   # Ignore Azure SR-IOV NIC drivers that are transparently bonded to synthetic NICs
