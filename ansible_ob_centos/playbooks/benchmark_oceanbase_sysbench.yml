@@ -100,6 +100,13 @@
             else ['zone1']
           }}
 
+    - name: Show discovered benchmark zones and SQL fragments
+      debug:
+        msg:
+          - "Zones discovered: {{ benchmark_zone_discovery.stdout_lines | default([]) }}"
+          - "ZONE_LIST SQL: ({{ benchmark_zone_list_sql }})"
+          - "LOCALITY SQL: {{ benchmark_locality_sql }}"
+
     - name: Create benchmark unit config
       shell: |
         mysql -h {{ mysql_host }} -P {{ mysql_port }} -uroot@sys -p'{{ benchmark_tenant_password }}' -Doceanbase \
