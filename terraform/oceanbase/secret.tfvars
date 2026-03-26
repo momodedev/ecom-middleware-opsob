@@ -20,7 +20,7 @@ oceanbase_cpu_count         = 8     # Match D8s_v6 (8 vCPUs)
 # Network Configuration
 oceanbase_vnet_name         = "control-ob-vnet"
 oceanbase_subnet_name       = "control-ob-subnet"
-enable_nat_gateway          = true
+enable_nat_gateway          = false  # NAT gateway is managed by manage_node_ob module
 
 # High Availability Configuration
 enable_availability_zones   = true

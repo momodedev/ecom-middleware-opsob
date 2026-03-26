@@ -124,6 +124,38 @@ resource "azurerm_network_security_rule" "existing_nsg_control_ssh" {
   network_security_group_name = local.control_existing_nsg_name
 }
 
+# ==================== NAT Gateway (outbound internet for subnet) ====================
+# Required because default_outbound_access_enabled=false on the subnet.
+# Without this, cloud-init cannot download packages (terraform, azure-cli, etc).
+
+resource "azurerm_public_ip" "nat" {
+  name                = "control-nat-ip"
+  location            = local.resource_group_location
+  resource_group_name = local.resource_group_name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+
+  lifecycle {
+    ignore_changes = [ip_tags, tags, zones]
+  }
+}
+
+resource "azurerm_nat_gateway" "control" {
+  name                = "control-nat"
+  location            = local.resource_group_location
+  resource_group_name = local.resource_group_name
+}
+
+resource "azurerm_nat_gateway_public_ip_association" "control" {
+  nat_gateway_id       = azurerm_nat_gateway.control.id
+  public_ip_address_id = azurerm_public_ip.nat.id
+}
+
+resource "azurerm_subnet_nat_gateway_association" "control" {
+  subnet_id      = azurerm_subnet.control.id
+  nat_gateway_id = azurerm_nat_gateway.control.id
+}
+
 # ==================== Control Node Public IP (for SSH access) ====================
 
 # Create public IP (Azure will return existing if it matches)
