@@ -1,18 +1,16 @@
 ---
 # playbook to deploy the monitoring stack for an OceanBase cluster
 #
-# This playbook assumes you have defined two host groups in your Ansible
-# inventory:
+# This playbook assumes you have defined the following host group in your
+# Ansible inventory:
 #
-#   - **management_node** – the single control/management node created by
-#     Terraform.  Prometheus and Grafana will run on
-#     this host.  Deploying the monitoring services on the control
-#     node re-uses existing infrastructure (Prometheus on 9090
-#     and Grafana on 3000).
-#
-#   - **oceanbase_observer** – the set of OceanBase observer hosts.
+#   - **oceanbase** – the set of OceanBase observer hosts.
 #     Each observer will run a node exporter so
 #     Prometheus can collect CPU, memory and disk metrics.
+#
+# Prometheus and Grafana are deployed on the local management node
+# (localhost) where Ansible runs.  No separate [management_node] group
+# is needed.
 #
 # To use this playbook run:
 #
@@ -21,7 +19,8 @@
 # See the README in this directory for more details.
 
 - name: Deploy Prometheus and Grafana to the management node
-  hosts: management_node
+  hosts: localhost
+  connection: local
   become: true
   vars:
     # Versions of the monitoring components. Adjust as necessary.
@@ -32,7 +31,7 @@
     - role: ../roles/monitoring/prometheus_grafana
 
 - name: Install node exporter on all OceanBase observers
-  hosts: oceanbase_observer
+  hosts: oceanbase
   become: true
   vars:
     node_exporter_version: "1.7.0"
@@ -60,5 +59,15 @@
         dest: "{{ node_targets_path }}"
         mode: "0644"
       vars:
-        target_ips: "{{ groups['oceanbase_observer'] | map('extract', hostvars, 'ansible_host') | list }}"
+        target_ips: "{{ groups['oceanbase'] | map('extract', hostvars, 'ansible_host') | list }}"
         target_port: "{{ node_exporter_port }}"
+
+    - name: Restart Prometheus to pick up new targets
+      ansible.builtin.systemd:
+        name: prometheus.service
+        state: restarted
+
+    - name: Restart Grafana to pick up any dashboard changes
+      ansible.builtin.systemd:
+        name: grafana-server
+        state: restarted
