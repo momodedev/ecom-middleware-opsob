@@ -793,8 +793,8 @@
         "allValue": ".*",
         "current": {
           "selected": true,
-          "text": "node-exporter",
-          "value": "node-exporter"
+          "text": "centos-ob-node-exporter",
+          "value": "centos-ob-node-exporter"
         },
         "datasource": {
           "type": "prometheus",
@@ -812,7 +812,7 @@
           "refId": "Prometheus-job-Variable-Query"
         },
         "refresh": 1,
-        "regex": "node[-_]exporter",
+        "regex": "centos[-_]ob[-_]node[-_]exporter",
         "skipUrlSync": false,
         "sort": 1,
         "type": "query"
