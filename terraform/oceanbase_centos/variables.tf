@@ -199,6 +199,25 @@ variable "enable_vnet_peering" {
   description = "Enable VNet peering between OceanBase VNet and control VNet."
 }
 
+# westus3 networking
+variable "centos_ob_vnet_address_space" {
+  type        = string
+  default     = "10.100.0.0/16"
+  description = "Address space for the CentOS OceanBase VNet in westus3."
+}
+
+variable "centos_ob_subnet_address_prefix" {
+  type        = string
+  default     = "10.100.1.0/24"
+  description = "Subnet address prefix for CentOS OceanBase VMs in westus3."
+}
+
+variable "centos_ob_zones" {
+  type        = list(string)
+  default     = ["2", "3", "4"]
+  description = "Availability zones for CentOS OceanBase VMs in westus3 (zone 1 is restricted for D8s_v5)."
+}
+
 variable "repository_name" {
   description = "Name of the repository directory."
   type        = string

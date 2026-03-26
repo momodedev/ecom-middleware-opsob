@@ -1,51 +1,133 @@
 # Use existing resource group (managed by terraform/manage_node_ob)
+# Note: RG is in westus, but CentOS OceanBase resources deploy to westus3
 data "azurerm_resource_group" "oceanbase" {
   name = var.resource_group_name
 }
 
 locals {
-  oceanbase_rg_name     = data.azurerm_resource_group.oceanbase.name
-  oceanbase_rg_location = data.azurerm_resource_group.oceanbase.location
-  oceanbase_rg_id       = data.azurerm_resource_group.oceanbase.id
+  oceanbase_rg_name = data.azurerm_resource_group.oceanbase.name
+  oceanbase_rg_id   = data.azurerm_resource_group.oceanbase.id
+  # VMs and networking deploy to westus3, not the RG's native location (westus)
+  deploy_location   = var.resource_group_location
 }
 
-# Look up existing control-node VNet/subnet/NSG
-# CentOS OceanBase observers are deployed into the same VNet/subnet/NSG as the control node
+# ──────────────────────────────────────────────────────────
+# Networking resources in westus3 (new VNet, subnet, NSG, NAT)
+# ──────────────────────────────────────────────────────────
+
+resource "azurerm_virtual_network" "centos_ob" {
+  name                = "centos-ob-vnet"
+  address_space       = [var.centos_ob_vnet_address_space]
+  location            = local.deploy_location
+  resource_group_name = local.oceanbase_rg_name
+
+  tags = {
+    Environment = "production"
+    Component   = "centos-oceanbase-network"
+  }
+}
+
+resource "azurerm_subnet" "centos_ob" {
+  name                 = "centos-ob-subnet"
+  resource_group_name  = local.oceanbase_rg_name
+  virtual_network_name = azurerm_virtual_network.centos_ob.name
+  address_prefixes     = [var.centos_ob_subnet_address_prefix]
+}
+
+resource "azurerm_network_security_group" "centos_ob" {
+  name                = "centos-ob-nsg"
+  location            = local.deploy_location
+  resource_group_name = local.oceanbase_rg_name
+
+  tags = {
+    Environment = "production"
+    Component   = "centos-oceanbase-nsg"
+  }
+}
+
+resource "azurerm_subnet_network_security_group_association" "centos_ob" {
+  subnet_id                 = azurerm_subnet.centos_ob.id
+  network_security_group_id = azurerm_network_security_group.centos_ob.id
+}
+
+# NAT Gateway for outbound internet access (yum, OceanBase downloads)
+resource "azurerm_public_ip" "centos_ob_nat" {
+  name                = "centos-ob-nat-ip"
+  location            = local.deploy_location
+  resource_group_name = local.oceanbase_rg_name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+
+  tags = {
+    Environment = "production"
+    Component   = "centos-oceanbase-nat"
+  }
+}
+
+resource "azurerm_nat_gateway" "centos_ob" {
+  name                = "centos-ob-nat"
+  location            = local.deploy_location
+  resource_group_name = local.oceanbase_rg_name
+  sku_name            = "Standard"
+
+  tags = {
+    Environment = "production"
+    Component   = "centos-oceanbase-nat"
+  }
+}
+
+resource "azurerm_nat_gateway_public_ip_association" "centos_ob" {
+  nat_gateway_id       = azurerm_nat_gateway.centos_ob.id
+  public_ip_address_id = azurerm_public_ip.centos_ob_nat.id
+}
+
+resource "azurerm_subnet_nat_gateway_association" "centos_ob" {
+  subnet_id      = azurerm_subnet.centos_ob.id
+  nat_gateway_id = azurerm_nat_gateway.centos_ob.id
+}
+
+# ──────────────────────────────────────────────────────────
+# VNet Peering: westus3 (centos-ob) <-> westus (control-ob)
+# Enables SSH from control node to CentOS OceanBase VMs
+# ──────────────────────────────────────────────────────────
+
 data "azurerm_virtual_network" "control" {
   name                = var.control_vnet_name
   resource_group_name = var.control_resource_group_name
 }
 
-data "azurerm_subnet" "control" {
-  name                 = var.control_subnet_name
-  virtual_network_name = var.control_vnet_name
-  resource_group_name  = var.control_resource_group_name
+resource "azurerm_virtual_network_peering" "centos_to_control" {
+  name                         = "centos-ob-to-control"
+  resource_group_name          = local.oceanbase_rg_name
+  virtual_network_name         = azurerm_virtual_network.centos_ob.name
+  remote_virtual_network_id    = data.azurerm_virtual_network.control.id
+  allow_forwarded_traffic      = true
+  allow_virtual_network_access = true
 }
 
-data "azurerm_network_security_group" "control" {
-  name                = var.control_nsg_name
-  resource_group_name = var.control_resource_group_name
+resource "azurerm_virtual_network_peering" "control_to_centos" {
+  name                         = "control-to-centos-ob"
+  resource_group_name          = var.control_resource_group_name
+  virtual_network_name         = var.control_vnet_name
+  remote_virtual_network_id    = azurerm_virtual_network.centos_ob.id
+  allow_forwarded_traffic      = true
+  allow_virtual_network_access = true
 }
 
 locals {
-  oceanbase_vnet_name   = data.azurerm_virtual_network.control.name
-  oceanbase_vnet_id     = data.azurerm_virtual_network.control.id
-  oceanbase_subnet_name = data.azurerm_subnet.control.name
-  oceanbase_subnet_id   = data.azurerm_subnet.control.id
+  oceanbase_vnet_name   = azurerm_virtual_network.centos_ob.name
+  oceanbase_vnet_id     = azurerm_virtual_network.centos_ob.id
+  oceanbase_subnet_name = azurerm_subnet.centos_ob.name
+  oceanbase_subnet_id   = azurerm_subnet.centos_ob.id
+  oceanbase_nsg_id      = azurerm_network_security_group.centos_ob.id
+  attach_oceanbase_nsg  = false  # NSG is attached at subnet level
 }
 
-# Reuse control node's NSG; NSG rules are already created by terraform/oceanbase module.
-# No NIC-level re-attachment needed for observer VMs.
-locals {
-  oceanbase_nsg_id     = data.azurerm_network_security_group.control.id
-  attach_oceanbase_nsg = false
-}
-
-# NSG rules are managed by the terraform/oceanbase module (same NSG).
-# Set manage_network_security_rules = true ONLY if deploying this module standalone.
+# ──────────────────────────────────────────────────────────
+# NSG Security Rules (always created for the new centos-ob-nsg)
+# ──────────────────────────────────────────────────────────
 
 resource "azurerm_network_security_rule" "centos_ob_observer_ssh" {
-  count                       = var.manage_network_security_rules ? 1 : 0
   name                        = "centos-ob-observer-ssh"
   priority                    = 300
   direction                   = "Inbound"
@@ -55,12 +137,11 @@ resource "azurerm_network_security_rule" "centos_ob_observer_ssh" {
   destination_port_range      = "22"
   source_address_prefix       = "VirtualNetwork"
   destination_address_prefix  = "*"
-  resource_group_name         = var.control_resource_group_name
-  network_security_group_name = var.control_nsg_name
+  resource_group_name         = local.oceanbase_rg_name
+  network_security_group_name = azurerm_network_security_group.centos_ob.name
 }
 
 resource "azurerm_network_security_rule" "centos_ob_mysql" {
-  count                       = var.manage_network_security_rules ? 1 : 0
   name                        = "centos-ob-mysql"
   priority                    = 310
   direction                   = "Inbound"
@@ -70,12 +151,11 @@ resource "azurerm_network_security_rule" "centos_ob_mysql" {
   destination_port_range      = tostring(var.oceanbase_mysql_port)
   source_address_prefix       = "VirtualNetwork"
   destination_address_prefix  = "*"
-  resource_group_name         = var.control_resource_group_name
-  network_security_group_name = var.control_nsg_name
+  resource_group_name         = local.oceanbase_rg_name
+  network_security_group_name = azurerm_network_security_group.centos_ob.name
 }
 
 resource "azurerm_network_security_rule" "centos_ob_rpc" {
-  count                       = var.manage_network_security_rules ? 1 : 0
   name                        = "centos-ob-rpc"
   priority                    = 320
   direction                   = "Inbound"
@@ -85,12 +165,11 @@ resource "azurerm_network_security_rule" "centos_ob_rpc" {
   destination_port_range      = "2882"
   source_address_prefix       = "VirtualNetwork"
   destination_address_prefix  = "*"
-  resource_group_name         = var.control_resource_group_name
-  network_security_group_name = var.control_nsg_name
+  resource_group_name         = local.oceanbase_rg_name
+  network_security_group_name = azurerm_network_security_group.centos_ob.name
 }
 
 resource "azurerm_network_security_rule" "centos_ob_obshell" {
-  count                       = var.manage_network_security_rules ? 1 : 0
   name                        = "centos-ob-obshell"
   priority                    = 330
   direction                   = "Inbound"
@@ -100,12 +179,11 @@ resource "azurerm_network_security_rule" "centos_ob_obshell" {
   destination_port_range      = "2886"
   source_address_prefix       = "VirtualNetwork"
   destination_address_prefix  = "*"
-  resource_group_name         = var.control_resource_group_name
-  network_security_group_name = var.control_nsg_name
+  resource_group_name         = local.oceanbase_rg_name
+  network_security_group_name = azurerm_network_security_group.centos_ob.name
 }
 
 resource "azurerm_network_security_rule" "centos_ob_monitoring" {
-  count                       = var.manage_network_security_rules ? 1 : 0
   name                        = "centos-ob-monitoring"
   priority                    = 340
   direction                   = "Inbound"
@@ -115,12 +193,11 @@ resource "azurerm_network_security_rule" "centos_ob_monitoring" {
   destination_port_ranges     = ["9100", "9308"]
   source_address_prefix       = "VirtualNetwork"
   destination_address_prefix  = "*"
-  resource_group_name         = var.control_resource_group_name
-  network_security_group_name = var.control_nsg_name
+  resource_group_name         = local.oceanbase_rg_name
+  network_security_group_name = azurerm_network_security_group.centos_ob.name
 }
 
 resource "azurerm_network_security_rule" "centos_ob_grafana_public" {
-  count                       = var.manage_network_security_rules ? 1 : 0
   name                        = "centos-ob-grafana-public"
   priority                    = 350
   direction                   = "Inbound"
@@ -130,12 +207,11 @@ resource "azurerm_network_security_rule" "centos_ob_grafana_public" {
   destination_port_range      = "3000"
   source_address_prefix       = "*"
   destination_address_prefix  = "*"
-  resource_group_name         = var.control_resource_group_name
-  network_security_group_name = var.control_nsg_name
+  resource_group_name         = local.oceanbase_rg_name
+  network_security_group_name = azurerm_network_security_group.centos_ob.name
 }
 
 resource "azurerm_network_security_rule" "centos_ob_prometheus_public" {
-  count                       = var.manage_network_security_rules ? 1 : 0
   name                        = "centos-ob-prometheus-public"
   priority                    = 360
   direction                   = "Inbound"
@@ -145,13 +221,9 @@ resource "azurerm_network_security_rule" "centos_ob_prometheus_public" {
   destination_port_range      = "9090"
   source_address_prefix       = "*"
   destination_address_prefix  = "*"
-  resource_group_name         = var.control_resource_group_name
-  network_security_group_name = var.control_nsg_name
+  resource_group_name         = local.oceanbase_rg_name
+  network_security_group_name = azurerm_network_security_group.centos_ob.name
 }
-
-# NAT Gateway is managed by terraform/manage_node_ob (control-nat).
-# CentOS OceanBase observers share the same subnet and use the existing NAT gateway
-# for outbound internet access. No additional NAT resources needed here.
 
 # Generate Ansible inventory from Terraform state
 locals {

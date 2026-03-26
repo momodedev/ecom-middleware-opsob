@@ -4,7 +4,7 @@
 resource "azurerm_network_interface" "oceanbase_observers" {
   count               = var.oceanbase_instance_count
   name                = "centos-ob-nic-${count.index}"
-  location            = local.oceanbase_rg_location
+  location            = local.deploy_location
   resource_group_name = local.oceanbase_rg_name
 
   ip_configuration {
@@ -35,10 +35,10 @@ resource "azurerm_network_interface_security_group_association" "oceanbase_obser
 resource "azurerm_linux_virtual_machine" "oceanbase_observers" {
   count               = var.oceanbase_instance_count
   name                = "centos-ob-observer-${count.index}"
-  location            = local.oceanbase_rg_location
+  location            = local.deploy_location
   resource_group_name = local.oceanbase_rg_name
   size                = var.oceanbase_vm_size
-  zone                = var.enable_availability_zones && var.oceanbase_vm_zone != "" ? var.oceanbase_vm_zone : null
+  zone                = var.enable_availability_zones ? element(var.centos_ob_zones, count.index) : null
 
   network_interface_ids = [
     azurerm_network_interface.oceanbase_observers[count.index].id
@@ -113,13 +113,13 @@ resource "azurerm_linux_virtual_machine" "oceanbase_observers" {
 resource "azurerm_managed_disk" "oceanbase_data" {
   count                = var.oceanbase_instance_count
   name                 = "centos-ob-data-disk-${count.index}"
-  location             = local.oceanbase_rg_location
+  location             = local.deploy_location
   resource_group_name  = local.oceanbase_rg_name
   storage_account_type = "PremiumV2_LRS"  # Premium SSD v2 LRS for better performance
   create_option        = "Empty"
   disk_size_gb         = var.oceanbase_data_disk_size_gb
 
-  zone = var.enable_availability_zones && var.oceanbase_vm_zone != "" ? var.oceanbase_vm_zone : null
+  zone = var.enable_availability_zones ? element(var.centos_ob_zones, count.index) : null
 
   tags = {
     Environment = "production"
@@ -148,13 +148,13 @@ resource "azurerm_virtual_machine_data_disk_attachment" "oceanbase_data" {
 resource "azurerm_managed_disk" "oceanbase_redo" {
   count                = var.oceanbase_instance_count
   name                 = "centos-ob-redo-disk-${count.index}"
-  location             = local.oceanbase_rg_location
+  location             = local.deploy_location
   resource_group_name  = local.oceanbase_rg_name
   storage_account_type = "PremiumV2_LRS"  # Premium SSD v2 LRS for better performance
   create_option        = "Empty"
   disk_size_gb         = var.oceanbase_redo_disk_size_gb
 
-  zone = var.enable_availability_zones && var.oceanbase_vm_zone != "" ? var.oceanbase_vm_zone : null
+  zone = var.enable_availability_zones ? element(var.centos_ob_zones, count.index) : null
 
   tags = {
     Environment = "production"

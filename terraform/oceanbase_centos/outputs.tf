@@ -6,8 +6,8 @@ output "resource_group_name" {
 }
 
 output "resource_group_location" {
-  description = "Azure region where OceanBase resources are deployed."
-  value       = local.oceanbase_rg_location
+  description = "Azure region where CentOS OceanBase resources are deployed."
+  value       = var.resource_group_location
 }
 
 output "oceanbase_vnet_name" {
@@ -82,7 +82,7 @@ output "deployment_summary" {
   description = "Summary of deployed OceanBase resources."
   value = {
     resource_group      = local.oceanbase_rg_name
-    location            = local.oceanbase_rg_location
+    location            = var.resource_group_location
     observer_count      = var.oceanbase_instance_count
     vm_size             = var.oceanbase_vm_size
     data_disk_size_gb   = var.oceanbase_data_disk_size_gb

@@ -11,8 +11,13 @@ oceanbase_vm_size           = "Standard_D8s_v5"  # V5 family for CentOS 7.9
 oceanbase_data_disk_size_gb = 500
 oceanbase_redo_disk_size_gb = 500
 
-# NSG rules are already managed by terraform/oceanbase module
-manage_network_security_rules = false
+# NSG rules are created for the new centos-ob-nsg in westus3
+manage_network_security_rules = true
+
+# westus3 networking (new VNet with peering back to westus control VNet)
+centos_ob_vnet_address_space    = "10.100.0.0/16"
+centos_ob_subnet_address_prefix = "10.100.1.0/24"
+centos_ob_zones                 = ["2", "3", "4"]
 
 # OceanBase Database Parameters
 oceanbase_cluster_name      = "ob_cluster"
@@ -20,10 +25,10 @@ oceanbase_root_password     = "OceanBase#!123"
 oceanbase_memory_limit      = "26G"
 oceanbase_cpu_count         = 8     # Match D8s_v5 (8 vCPUs)
 
-# Network Configuration - reuses existing control-ob-rg resources
-# NAT gateway is managed by manage_node_ob (control-nat)
-oceanbase_vnet_name         = "control-ob-vnet"
-oceanbase_subnet_name       = "control-ob-subnet"
+# Network Configuration - new VNet in westus3 with peering to control VNet
+# NAT gateway is created by this module (centos-ob-nat)
+oceanbase_vnet_name         = "centos-ob-vnet"
+oceanbase_subnet_name       = "centos-ob-subnet"
 
 # High Availability Configuration
 enable_availability_zones   = true
