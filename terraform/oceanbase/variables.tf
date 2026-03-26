@@ -150,12 +150,6 @@ variable "oceanbase_nsg_id" {
   description = "Optional existing NSG ID to attach to OceanBase NICs."
 }
 
-variable "enable_nat_gateway" {
-  type        = bool
-  default     = true
-  description = "Create and attach a NAT gateway for OceanBase subnet outbound access."
-}
-
 variable "oceanbase_allowed_cidrs" {
   type        = list(string)
   default     = ["10.0.0.0/16"]

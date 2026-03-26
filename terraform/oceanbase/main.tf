@@ -143,47 +143,9 @@ resource "azurerm_network_security_rule" "ob_prometheus_public" {
   network_security_group_name = var.control_nsg_name
 }
 
-# NAT Gateway - provides outbound internet for observer VMs (which have no public IPs)
-# The control node's own public IP handles its outbound traffic; NAT only affects VMs without one.
-resource "azurerm_public_ip" "oceanbase_nat" {
-  count               = var.enable_nat_gateway ? 1 : 0
-  name                = "oceanbase-nat-ip"
-  location            = local.oceanbase_rg_location
-  resource_group_name = local.oceanbase_rg_name
-  allocation_method   = "Static"
-  sku                 = "Standard"
-
-  tags = {
-    Environment = "production"
-    Component   = "oceanbase-nat"
-    ManagedBy   = "terraform"
-  }
-}
-
-resource "azurerm_nat_gateway" "oceanbase" {
-  count               = var.enable_nat_gateway ? 1 : 0
-  name                = "oceanbase-nat"
-  location            = local.oceanbase_rg_location
-  resource_group_name = local.oceanbase_rg_name
-
-  tags = {
-    Environment = "production"
-    Component   = "oceanbase-nat"
-    ManagedBy   = "terraform"
-  }
-}
-
-resource "azurerm_subnet_nat_gateway_association" "oceanbase" {
-  count          = var.enable_nat_gateway ? 1 : 0
-  subnet_id      = local.oceanbase_subnet_id
-  nat_gateway_id = azurerm_nat_gateway.oceanbase[0].id
-}
-
-resource "azurerm_nat_gateway_public_ip_association" "oceanbase" {
-  count                = var.enable_nat_gateway ? 1 : 0
-  nat_gateway_id       = azurerm_nat_gateway.oceanbase[0].id
-  public_ip_address_id = azurerm_public_ip.oceanbase_nat[0].id
-}
+# NAT Gateway is managed by terraform/manage_node_ob (control-nat).
+# OceanBase observers share the same subnet and use the existing NAT gateway
+# for outbound internet access. No additional NAT resources needed here.
 
 # VNet peering removed: OceanBase observers are now in the same VNet as the control node.
 
@@ -217,7 +179,6 @@ resource "null_resource" "wait_for_ssh" {
     azurerm_virtual_machine_data_disk_attachment.oceanbase_data,
     azurerm_virtual_machine_data_disk_attachment.oceanbase_redo,
     azurerm_network_security_rule.ob_observer_ssh,
-    azurerm_subnet_nat_gateway_association.oceanbase,
     local_file.ansible_inventory
   ]
 

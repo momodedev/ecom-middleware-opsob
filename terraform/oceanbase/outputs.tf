@@ -88,7 +88,6 @@ output "deployment_summary" {
     data_disk_size_gb   = var.oceanbase_data_disk_size_gb
     redo_disk_size_gb   = var.oceanbase_redo_disk_size_gb
     availability_zones  = var.enable_availability_zones
-    nat_gateway_enabled = var.enable_nat_gateway
     vnet_peering_enabled = var.enable_vnet_peering && var.deploy_mode == "together"
   }
 }

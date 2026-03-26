@@ -17,10 +17,10 @@ oceanbase_root_password     = "OceanBase#!123"
 oceanbase_memory_limit      = "26G"
 oceanbase_cpu_count         = 8     # Match D8s_v6 (8 vCPUs)
 
-# Network Configuration
+# Network Configuration - reuses existing control-ob-rg resources
+# NAT gateway is managed by manage_node_ob (control-nat)
 oceanbase_vnet_name         = "control-ob-vnet"
 oceanbase_subnet_name       = "control-ob-subnet"
-enable_nat_gateway          = false  # NAT gateway is managed by manage_node_ob module
 
 # High Availability Configuration
 enable_availability_zones   = true
