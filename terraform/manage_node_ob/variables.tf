@@ -141,6 +141,36 @@ variable "control_vm_size" {
   default     = "Standard_D8ls_v6"
 }
 
+variable "rocky_image_publisher" {
+  description = "Publisher for the Rocky Linux marketplace image."
+  type        = string
+  default     = "resf"
+}
+
+variable "rocky_image_offer" {
+  description = "Offer for the Rocky Linux marketplace image."
+  type        = string
+  default     = "rockylinux-x86_64"
+}
+
+variable "rocky_image_sku" {
+  description = "SKU for the Rocky Linux marketplace image."
+  type        = string
+  default     = "9-base"
+}
+
+variable "rocky_image_version" {
+  description = "Version for the Rocky Linux marketplace image. Use an explicit 9.6 build to force 9.6->9.7 in-place upgrade via cloud-init."
+  type        = string
+  default     = "latest"
+}
+
+variable "rocky_target_release" {
+  description = "Target Rocky Linux minor release enforced by cloud-init upgrade (for example 9.7)."
+  type        = string
+  default     = "9.7"
+}
+
 variable "ansible_run_id" {
   description = "String to force rerun of OceanBase/monitoring Ansible playbooks. Change value to trigger."
   type        = string

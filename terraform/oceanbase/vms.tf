@@ -71,16 +71,16 @@ resource "azurerm_linux_virtual_machine" "oceanbase_observers" {
   }
 
   source_image_reference {
-    publisher = "resf"
-    offer     = "rockylinux-x86_64"
-    sku       = "9-base"
-    version   = "latest"
+    publisher = var.rocky_image_publisher
+    offer     = var.rocky_image_offer
+    sku       = var.rocky_image_sku
+    version   = var.rocky_image_version
   }
 
   plan {
-    publisher = "resf"
-    product   = "rockylinux-x86_64"
-    name      = "9-base"
+    publisher = var.rocky_image_publisher
+    product   = var.rocky_image_offer
+    name      = var.rocky_image_sku
   }
 
   # Bootstrap with cloud-init for system dependencies and disk mounting
@@ -88,6 +88,7 @@ resource "azurerm_linux_virtual_machine" "oceanbase_observers" {
     oceanbase_admin_username = "oceanadmin"
     oceanbase_data_disk_size_gb = var.oceanbase_data_disk_size_gb
     oceanbase_redo_disk_size_gb = var.oceanbase_redo_disk_size_gb
+    rocky_target_release = var.rocky_target_release
   }))
 
   tags = {

@@ -39,6 +39,36 @@ variable "oceanbase_vm_size" {
   default     = "Standard_D8s_v5"
 }
 
+variable "rocky_image_publisher" {
+  description = "Publisher for the Rocky Linux marketplace image used by OceanBase observer VMs."
+  type        = string
+  default     = "resf"
+}
+
+variable "rocky_image_offer" {
+  description = "Offer for the Rocky Linux marketplace image used by OceanBase observer VMs."
+  type        = string
+  default     = "rockylinux-x86_64"
+}
+
+variable "rocky_image_sku" {
+  description = "SKU for the Rocky Linux marketplace image used by OceanBase observer VMs."
+  type        = string
+  default     = "9-base"
+}
+
+variable "rocky_image_version" {
+  description = "Version for the Rocky Linux marketplace image used by OceanBase observer VMs. Set an explicit 9.6 build for controlled 9.6->9.7 upgrade."
+  type        = string
+  default     = "latest"
+}
+
+variable "rocky_target_release" {
+  description = "Target Rocky Linux minor release enforced by cloud-init upgrade (for example 9.7)."
+  type        = string
+  default     = "9.7"
+}
+
 variable "oceanbase_data_disk_size_gb" {
   description = "Size of data disk for OceanBase (GB)."
   type        = number
