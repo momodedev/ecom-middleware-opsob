@@ -89,7 +89,7 @@
 
     - name: Build zone SQL fragments for resource pool and tenant locality
       set_fact:
-        benchmark_zone_list_sql: "{{ benchmark_zone_list | map('regex_replace', '^(.*)$', "'\\1'") | join(', ') }}"
+        benchmark_zone_list_sql: "{{ benchmark_zone_list | map('quote') | join(', ') }}"
         benchmark_locality_sql: "{{ benchmark_zone_list | map('regex_replace', '^(.*)$', 'FULL{1}@\\1') | join(', ') }}"
       vars:
         benchmark_zone_list: >-
