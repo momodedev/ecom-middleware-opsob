@@ -169,7 +169,7 @@
     mode: '0755'
   tags: grafana
 
-- name: Remove legacy Kafka dashboards from Grafana provisioning
+- name: Remove legacy dashboards from Grafana provisioning
   ansible.builtin.file:
     path: "/etc/grafana/provisioning/dashboards/ansible/{{ item }}"
     state: absent
@@ -178,6 +178,7 @@
     - kafka_cluster_dashboard.json
     - kafka_kraft_dashboard.json
     - kafka_kraft_dashboard_enhance.json
+    - node_exporter_dashboard.json
   tags: grafana
 
 - name: Copy Grafana dashboard JSONs

@@ -867,5 +867,5 @@
   },
   "title": "centos_Node Exporter - Host Resource Monitoring",
   "uid": "centos-node-exporter",
-  "version": 2
+  "version": 3
 }
