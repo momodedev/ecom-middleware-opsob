@@ -85,6 +85,7 @@ runcmd:
       best_dev=""
       best_diff=""
 
+      lsblk -dnbo PATH,SIZE,TYPE > /tmp/_ci_disks.txt
       while read -r dev size type; do
         [ "$type" = "disk" ] || continue
         [ "$dev" = "$exclude_dev" ] && continue
@@ -97,9 +98,8 @@ runcmd:
           best_diff="$diff"
           best_dev="$dev"
         fi
-      done <<EOF
-$(lsblk -dnbo PATH,SIZE,TYPE)
-EOF
+      done < /tmp/_ci_disks.txt
+      rm -f /tmp/_ci_disks.txt
 
       echo "$best_dev"
     }
@@ -214,12 +214,13 @@ EOF
       echo 0 > /proc/sys/kernel/numa_balancing
     fi
   
-  # Log cloud-init completion
+  # Log cloud-init bootstrap completion (before OS upgrade)
   - echo "Cloud-init bootstrap completed at $(date)" > /var/log/oceanbase-bootstrap-complete.log
 
   # Upgrade Rocky Linux to the current 9.7 baseline before handing over to Ansible
   - dnf -y upgrade --refresh
   - dnf clean all || true
+  - echo "OS upgrade completed at $(date). $(cat /etc/rocky-release)" > /var/log/oceanbase-upgrade-complete.log
 
 power_state:
   delay: now

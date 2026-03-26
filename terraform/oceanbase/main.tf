@@ -186,6 +186,8 @@ resource "null_resource" "wait_for_ssh" {
     command = <<-EOT
       echo "Waiting for OceanBase VMs to be ready..."
       
+      SSH_OPTS="-o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ${var.ssh_private_key_path}"
+      
       # Initial wait for VM boot-up (Azure VMs typically take 2-3 minutes)
       echo "Waiting 120 seconds for VMs to boot..."
       sleep 120
@@ -195,13 +197,12 @@ resource "null_resource" "wait_for_ssh" {
       
       for ip in $observer_ips; do
         echo "Checking SSH connectivity to $ip..."
-        timeout=600  # Increased to 10 minutes
+        timeout=600  # 10 minutes
         elapsed=0
         retry_count=0
         
         while [ $elapsed -lt $timeout ]; do
-          # Try SSH connection
-          if ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ${var.ssh_private_key_path} oceanadmin@$ip "echo 'SSH ready'" >/dev/null 2>&1; then
+          if ssh $SSH_OPTS oceanadmin@$ip "echo 'SSH ready'" >/dev/null 2>&1; then
             echo "✓ SSH ready on $ip"
             break
           fi
@@ -217,17 +218,71 @@ resource "null_resource" "wait_for_ssh" {
         
         if [ $elapsed -ge $timeout ]; then
           echo "✗ Timeout waiting for SSH on $ip after $timeout seconds"
-          echo ""
-          echo "Troubleshooting:"
-          echo "  1. Check VM status: azure vm show -g control-ob-rg -n $(echo $ip | sed 's/.*\.\([0-9]*\)$/ob-observer-\1/')"
-          echo "  2. Check NSG rules: azure network nsg rule list -g control-ob-rg --nsg-name oceanbase-nsg"
-          echo "  3. Verify SSH key permissions: chmod 600 ${var.ssh_private_key_path}"
           exit 1
         fi
       done
       
       echo ""
-      echo "✅ All OceanBase VMs are SSH accessible!"
+      echo "✅ All OceanBase VMs are SSH accessible (pre cloud-init)."
+      echo ""
+      
+      # ── Phase 2: Wait for cloud-init to finish on each VM ──────────
+      # cloud-init runs the OS upgrade (9.6→9.7) and triggers a reboot.
+      # Ansible must NOT start until that reboot is complete.
+      echo "Waiting for cloud-init to complete on all VMs..."
+      for ip in $observer_ips; do
+        echo "Polling cloud-init status on $ip..."
+        ci_timeout=900  # 15 minutes max for cloud-init
+        ci_elapsed=0
+        while [ $ci_elapsed -lt $ci_timeout ]; do
+          ci_status=$(ssh $SSH_OPTS oceanadmin@$ip \
+            "sudo cloud-init status 2>/dev/null | awk '/^status:/{print \$2}'" 2>/dev/null || echo "unreachable")
+          
+          if [ "$ci_status" = "done" ] || [ "$ci_status" = "error" ]; then
+            echo "✓ Cloud-init finished on $ip (status: $ci_status)"
+            break
+          fi
+          
+          if [ $((ci_elapsed % 60)) -eq 0 ]; then
+            echo "  Cloud-init still running on $ip ($ci_elapsed s elapsed, status: $ci_status)"
+          fi
+          
+          sleep 15
+          ci_elapsed=$((ci_elapsed + 15))
+        done
+        
+        if [ $ci_elapsed -ge $ci_timeout ]; then
+          echo "⚠ Cloud-init did not finish on $ip within $ci_timeout seconds – proceeding anyway"
+        fi
+      done
+      
+      # ── Phase 3: Wait for power_state reboot and SSH to come back ──
+      echo ""
+      echo "Waiting 90 seconds for VMs to reboot after OS upgrade..."
+      sleep 90
+      
+      for ip in $observer_ips; do
+        echo "Checking SSH after reboot on $ip..."
+        timeout=300
+        elapsed=0
+        while [ $elapsed -lt $timeout ]; do
+          if ssh $SSH_OPTS oceanadmin@$ip "echo 'post-reboot OK'" >/dev/null 2>&1; then
+            os_ver=$(ssh $SSH_OPTS oceanadmin@$ip "cat /etc/rocky-release" 2>/dev/null || echo "unknown")
+            echo "✓ SSH ready on $ip after reboot (OS: $os_ver)"
+            break
+          fi
+          sleep 10
+          elapsed=$((elapsed + 10))
+        done
+        
+        if [ $elapsed -ge $timeout ]; then
+          echo "✗ Timeout waiting for SSH after reboot on $ip"
+          exit 1
+        fi
+      done
+      
+      echo ""
+      echo "✅ All OceanBase VMs ready (cloud-init done, post-reboot)!"
       echo "   Observer IPs: $observer_ips"
     EOT
     
