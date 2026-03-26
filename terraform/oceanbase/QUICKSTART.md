@@ -32,7 +32,7 @@ terraform apply -var-file='secret.tfvars'
 ✅ 创建 NAT Gateway  
 ✅ 创建 3 台 Observer VM (Standard_D8s_v5)  
 ✅ 挂载数据盘 (500GB SSD)  
-✅ 挂载日志盘 (200GB SSD)  
+✅ 挂载日志盘 (500GB SSD)  
 
 ### 阶段 2: 等待与验证
 ⏳ 等待 60 秒让 VM 初始化  

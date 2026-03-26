@@ -48,7 +48,7 @@ variable "oceanbase_data_disk_size_gb" {
 variable "oceanbase_redo_disk_size_gb" {
   description = "Size of redo log disk for OceanBase (GB)."
   type        = number
-  default     = 200
+  default     = 500
 }
 
 variable "ansible_run_id" {
