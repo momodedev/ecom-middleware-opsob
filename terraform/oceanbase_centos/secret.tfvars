@@ -3,7 +3,7 @@ ARM_SUBSCRIPTION_ID = "8d6bd1eb-ae31-4f2c-856a-0f8e47115c4b"
 
 # Resource Group Configuration - SAME AS CONTROL NODE
 resource_group_name       = "control-ob-rg"
-resource_group_location   = "westus"
+resource_group_location   = "westus3"
 
 # OceanBase Cluster Configuration
 oceanbase_instance_count    = 3  # Recommended: 3 nodes for high availability

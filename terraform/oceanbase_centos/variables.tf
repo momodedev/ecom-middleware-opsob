@@ -1,6 +1,6 @@
 variable "resource_group_location" {
   type        = string
-  default     = "westus"
+  default     = "westus3"
   description = "Azure region for CentOS OceanBase cluster deployment. Use regions supporting D8s_v5 VMs and Premium SSDs."
 }
 
