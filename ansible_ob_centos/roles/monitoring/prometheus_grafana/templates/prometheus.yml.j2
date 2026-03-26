@@ -13,3 +13,9 @@ scrape_configs:
       - files:
           - '/etc/prometheus/file_sd/centos_ob_node_targets.json'
         refresh_interval: 30s
+
+  - job_name: 'node-exporter'
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/file_sd/node_targets.json'
+        refresh_interval: 30s

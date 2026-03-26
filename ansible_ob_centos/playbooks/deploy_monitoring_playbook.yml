@@ -57,8 +57,22 @@
         path: "/etc/prometheus/file_sd/{{ item }}"
         state: absent
       loop:
-        - node_targets.json
         - oceanbase_targets.json
+
+    - name: Render Rocky node exporter targets file
+      copy:
+        content: |
+          [
+            {
+              "targets": [
+                "172.17.1.7:9100",
+                "172.17.1.6:9100",
+                "172.17.1.5:9100"
+              ]
+            }
+          ]
+        dest: "/etc/prometheus/file_sd/node_targets.json"
+        mode: "0644"
 
     - name: Render CentOS node exporter targets file
       template:

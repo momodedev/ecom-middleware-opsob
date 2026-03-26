@@ -178,7 +178,6 @@
     - kafka_cluster_dashboard.json
     - kafka_kraft_dashboard.json
     - kafka_kraft_dashboard_enhance.json
-    - node_exporter_dashboard.json
   tags: grafana
 
 - name: Copy Grafana dashboard JSONs
@@ -188,6 +187,7 @@
     mode: '0644'
   loop:
     - centos_node_exporter_dashboard.json
+    - node_exporter_dashboard.json
   tags: grafana
 
 - name: Enable and start Grafana service
