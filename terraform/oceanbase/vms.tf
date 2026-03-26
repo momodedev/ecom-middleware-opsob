@@ -7,20 +7,6 @@ resource "azurerm_network_interface" "oceanbase_observers" {
   location            = local.oceanbase_rg_location
   resource_group_name = local.oceanbase_rg_name
 
-  # Sequence network mutations first to avoid long Azure control-plane contention
-  # between subnet NAT association, NSG rule updates, and NIC/VM provisioning.
-  depends_on = [
-    azurerm_subnet_nat_gateway_association.oceanbase,
-    azurerm_nat_gateway_public_ip_association.oceanbase,
-    azurerm_network_security_rule.ob_observer_ssh,
-    azurerm_network_security_rule.ob_mysql,
-    azurerm_network_security_rule.ob_rpc,
-    azurerm_network_security_rule.ob_obshell,
-    azurerm_network_security_rule.ob_monitoring,
-    azurerm_network_security_rule.ob_grafana_public,
-    azurerm_network_security_rule.ob_prometheus_public
-  ]
-
   ip_configuration {
     name                          = "ob-ip-config-${count.index}"
     subnet_id                     = local.oceanbase_subnet_id
@@ -58,12 +44,6 @@ resource "azurerm_linux_virtual_machine" "oceanbase_observers" {
     azurerm_network_interface.oceanbase_observers[count.index].id
   ]
 
-  depends_on = [
-    azurerm_network_interface.oceanbase_observers,
-    azurerm_subnet_nat_gateway_association.oceanbase,
-    azurerm_nat_gateway_public_ip_association.oceanbase
-  ]
-
   # Add delay between VM creations to avoid Azure throttling
   provisioner "local-exec" {
     command = "sleep ${count.index * 30}"
@@ -91,16 +71,16 @@ resource "azurerm_linux_virtual_machine" "oceanbase_observers" {
   }
 
   source_image_reference {
-    publisher = var.rocky_image_publisher
-    offer     = var.rocky_image_offer
-    sku       = var.rocky_image_sku
-    version   = var.rocky_image_version
+    publisher = "resf"
+    offer     = "rockylinux-x86_64"
+    sku       = "9-base"
+    version   = "9.6.20250531"
   }
 
   plan {
-    publisher = var.rocky_image_publisher
-    product   = var.rocky_image_offer
-    name      = var.rocky_image_sku
+    publisher = "resf"
+    product   = "rockylinux-x86_64"
+    name      = "9-base"
   }
 
   # Bootstrap with cloud-init for system dependencies and disk mounting
@@ -108,8 +88,15 @@ resource "azurerm_linux_virtual_machine" "oceanbase_observers" {
     oceanbase_admin_username = "oceanadmin"
     oceanbase_data_disk_size_gb = var.oceanbase_data_disk_size_gb
     oceanbase_redo_disk_size_gb = var.oceanbase_redo_disk_size_gb
-    rocky_target_release = var.rocky_target_release
   }))
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  boot_diagnostics {
+    storage_account_uri = null
+  }
 
   tags = {
     Environment = "production"
@@ -121,6 +108,7 @@ resource "azurerm_linux_virtual_machine" "oceanbase_observers" {
   lifecycle {
     ignore_changes = [
       bypass_platform_safety_checks_on_user_schedule_enabled,
+      custom_data,
       tags
     ]
   }

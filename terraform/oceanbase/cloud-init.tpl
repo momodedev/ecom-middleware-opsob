@@ -1,5 +1,5 @@
 #cloud-config
-# Cloud-init configuration for OceanBase observer VMs (Rocky Linux target ${rocky_target_release})
+# Cloud-init configuration for OceanBase observer VMs (Rocky Linux 9.7)
 # Installs system dependencies needed before Ansible configures OceanBase
 
 package_update: true
@@ -97,7 +97,9 @@ runcmd:
           best_diff="$diff"
           best_dev="$dev"
         fi
-      done < <(lsblk -dnbo PATH,SIZE,TYPE)
+      done <<EOF
+$(lsblk -dnbo PATH,SIZE,TYPE)
+EOF
 
       echo "$best_dev"
     }
@@ -215,8 +217,8 @@ runcmd:
   # Log cloud-init completion
   - echo "Cloud-init bootstrap completed at $(date)" > /var/log/oceanbase-bootstrap-complete.log
 
-  # Pin and upgrade to the requested Rocky Linux minor baseline before handing over to Ansible
-  - dnf -y distro-sync --releasever=${rocky_target_release} --refresh --allowerasing
+  # Upgrade Rocky Linux to the current 9.7 baseline before handing over to Ansible
+  - dnf -y upgrade --refresh
   - dnf clean all || true
 
 power_state:

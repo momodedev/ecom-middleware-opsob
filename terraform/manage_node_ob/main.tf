@@ -190,22 +190,21 @@ resource "azurerm_linux_virtual_machine" "example" {
   }
 
   source_image_reference {
-    publisher = var.rocky_image_publisher
-    offer     = var.rocky_image_offer
-    sku       = var.rocky_image_sku
-    version   = var.rocky_image_version
+    publisher = "resf"
+    offer     = "rockylinux-x86_64"
+    sku       = "9-base"
+    version   = "latest"
   }
 
   plan {
-    publisher = var.rocky_image_publisher
-    product   = var.rocky_image_offer
-    name      = var.rocky_image_sku
+    publisher = "resf"
+    product   = "rockylinux-x86_64"
+    name      = "9-base"
   }
 
   # Bootstrap control node with cloud-init (Azure best practice)
   custom_data = base64encode(templatefile("${path.module}/cloud-init.tpl", {
-    control_ssh_port   = var.control_ssh_port
-    rocky_target_release = var.rocky_target_release
+    control_ssh_port = var.control_ssh_port
   }))
 
   lifecycle {

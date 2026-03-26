@@ -258,8 +258,8 @@ resource "null_resource" "wait_for_ssh" {
           echo "✗ Timeout waiting for SSH on $ip after $timeout seconds"
           echo ""
           echo "Troubleshooting:"
-          echo "  1. Check VM status: az vm show -g control-ob-rg -n <observer-vm-name> -d"
-          echo "  2. Check NSG rules: az network nsg rule list -g control-ob-rg --nsg-name oceanbase-nsg"
+          echo "  1. Check VM status: azure vm show -g control-ob-rg -n $(echo $ip | sed 's/.*\.\([0-9]*\)$/ob-observer-\1/')"
+          echo "  2. Check NSG rules: azure network nsg rule list -g control-ob-rg --nsg-name oceanbase-nsg"
           echo "  3. Verify SSH key permissions: chmod 600 ${var.ssh_private_key_path}"
           exit 1
         fi
