@@ -9,7 +9,7 @@
     benchmark_output_dir: "/tmp/oceanbase-bench"
     benchmark_output_csv: "{{ benchmark_output_dir }}/{{ benchmark_label }}.csv"
 
-    mysql_host: "127.0.0.1"
+    mysql_host: "{{ hostvars[groups['oceanbase'][0]]['ansible_host'] | default('10.100.1.6') }}"
     mysql_port: 2881
     mysql_user: "root@sbtest_tenant"
     mysql_password: "OceanBase#!123"

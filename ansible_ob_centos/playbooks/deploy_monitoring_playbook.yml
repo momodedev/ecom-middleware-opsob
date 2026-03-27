@@ -52,27 +52,13 @@
         state: directory
         mode: "0755"
 
-    - name: Remove stale Rocky cluster target files
+    - name: Remove stale target files from other clusters
       file:
         path: "/etc/prometheus/file_sd/{{ item }}"
         state: absent
       loop:
         - oceanbase_targets.json
-
-    - name: Render Rocky node exporter targets file
-      copy:
-        content: |
-          [
-            {
-              "targets": [
-                "172.17.1.7:9100",
-                "172.17.1.6:9100",
-                "172.17.1.5:9100"
-              ]
-            }
-          ]
-        dest: "/etc/prometheus/file_sd/node_targets.json"
-        mode: "0644"
+        - node_targets.json
 
     - name: Render CentOS node exporter targets file
       template:
