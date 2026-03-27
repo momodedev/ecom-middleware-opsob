@@ -1,0 +1,16 @@
+timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors,exit_code,status
+2026-03-27T08:59:31Z,d8s_v6_rocky,oltp_read_only,16,1970.41,11.65,8.12,3783520,0,0,ok
+2026-03-27T09:01:31Z,d8s_v6_rocky,oltp_read_only,32,2767.58,16.41,11.56,5314336,0,0,ok
+2026-03-27T09:03:31Z,d8s_v6_rocky,oltp_read_only,64,3193.79,38.94,20.04,6132928,0,0,ok
+2026-03-27T09:05:31Z,d8s_v6_rocky,oltp_read_only,128,3561.90,74.46,35.93,6842128,0,0,ok
+2026-03-27T09:07:32Z,d8s_v6_rocky,oltp_read_only,256,3940.59,116.80,64.95,7569392,0,0,ok
+2026-03-27T09:09:32Z,d8s_v6_rocky,oltp_write_only,16,1778.69,11.04,8.99,1280778,0,0,ok
+2026-03-27T09:11:32Z,d8s_v6_rocky,oltp_write_only,32,3223.66,12.30,9.92,2324172,0,0,ok
+2026-03-27T09:13:32Z,d8s_v6_rocky,oltp_write_only,64,4382.73,20.00,14.60,3156006,0,0,ok
+2026-03-27T09:15:33Z,d8s_v6_rocky,oltp_write_only,128,0,0,0,0,0,1,failed
+2026-03-27T09:17:32Z,d8s_v6_rocky,oltp_write_only,256,3951.09,99.33,64.76,2846802,0,0,ok
+2026-03-27T09:19:32Z,d8s_v6_rocky,oltp_read_write,16,627.36,35.59,25.50,1506100,0,0,ok
+2026-03-27T09:21:32Z,d8s_v6_rocky,oltp_read_write,32,874.81,51.02,36.57,2100240,0,0,ok
+2026-03-27T09:23:33Z,d8s_v6_rocky,oltp_read_write,64,950.90,89.16,67.28,2283340,0,0,ok
+2026-03-27T09:25:33Z,d8s_v6_rocky,oltp_read_write,128,911.48,200.47,140.37,2189420,0,0,ok
+2026-03-27T09:27:33Z,d8s_v6_rocky,oltp_read_write,256,964.54,363.18,265.24,2318240,0,0,ok
