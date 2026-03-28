@@ -1,0 +1,16 @@
+timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors,exit_code,status
+2026-03-28T15:21:01Z,20260328T152038Z_d8s_v5_centos_perf_sys,oltp_read_only,16,316.88,58.92,50.48,608624,0,0,ok
+2026-03-28T15:23:01Z,20260328T152038Z_d8s_v5_centos_perf_sys,oltp_read_only,32,335.06,106.75,95.49,643664,0,0,ok
+2026-03-28T15:25:01Z,20260328T152038Z_d8s_v5_centos_perf_sys,oltp_read_only,64,335.77,204.11,190.54,645216,0,0,ok
+2026-03-28T15:27:01Z,20260328T152038Z_d8s_v5_centos_perf_sys,oltp_read_only,128,335.29,397.39,381.52,644960,0,0,ok
+2026-03-28T15:29:02Z,20260328T152038Z_d8s_v5_centos_perf_sys,oltp_read_only,256,330.55,831.46,773.50,636720,0,0,ok
+2026-03-28T15:31:03Z,20260328T152038Z_d8s_v5_centos_perf_sys,oltp_write_only,16,994.38,20.74,16.09,716046,0,0,ok
+2026-03-28T15:33:03Z,20260328T152038Z_d8s_v5_centos_perf_sys,oltp_write_only,32,1222.19,33.12,26.18,880110,0,0,ok
+2026-03-28T15:35:03Z,20260328T152038Z_d8s_v5_centos_perf_sys,oltp_write_only,64,1211.94,63.32,52.79,873000,0,0,ok
+2026-03-28T15:37:03Z,20260328T152038Z_d8s_v5_centos_perf_sys,oltp_write_only,128,1184.21,127.81,108.02,853452,0,0,ok
+2026-03-28T15:39:04Z,20260328T152038Z_d8s_v5_centos_perf_sys,oltp_write_only,256,1078.44,397.39,237.16,777744,0,0,ok
+2026-03-28T15:41:04Z,20260328T152038Z_d8s_v5_centos_perf_sys,oltp_read_write,16,214.98,84.47,74.41,516180,0,0,ok
+2026-03-28T15:43:04Z,20260328T152038Z_d8s_v5_centos_perf_sys,oltp_read_write,32,228.64,161.51,139.91,549180,0,0,ok
+2026-03-28T15:45:04Z,20260328T152038Z_d8s_v5_centos_perf_sys,oltp_read_write,64,224.99,303.33,284.32,540700,0,0,ok
+2026-03-28T15:47:05Z,20260328T152038Z_d8s_v5_centos_perf_sys,oltp_read_write,128,225.68,601.29,566.66,542940,0,0,ok
+2026-03-28T15:49:05Z,20260328T152038Z_d8s_v5_centos_perf_sys,oltp_read_write,256,221.53,1213.57,1153.54,534420,0,0,ok
