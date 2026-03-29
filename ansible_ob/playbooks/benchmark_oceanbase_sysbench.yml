@@ -52,7 +52,7 @@
     # System metrics collection from observer nodes during benchmark
     metrics_observer_ips: "{{ mysql_host }}"
     metrics_ssh_user: "oceanadmin"
-    metrics_ssh_key: "/home/azureadmin/.ssh/id_ed25519"
+    metrics_ssh_key: "/home/azureadmin/.ssh/id_rsa"
 
   tasks:
     - name: Ensure benchmark output directory exists
@@ -355,9 +355,9 @@
         result_file=$(mktemp)
 
         # ---------- Metrics: setup ----------
-        SSH_M_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes -i {{ metrics_ssh_key | default('/home/azureadmin/.ssh/id_ed25519') }}"
+        SSH_M_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes -i {{ metrics_ssh_key | default('/home/azureadmin/.ssh/id_rsa') }}"
         M_USER="{{ metrics_ssh_user | default('oceanadmin') }}"
-        M_IPS="{{ metrics_observer_ips | default(mysql_host) }}"
+        M_IPS=$(echo "{{ metrics_observer_ips | default(mysql_host) }}" | tr -d '"')
         snap_dir=$(mktemp -d)
 
         # ---------- Metrics: pre-snapshot ----------
