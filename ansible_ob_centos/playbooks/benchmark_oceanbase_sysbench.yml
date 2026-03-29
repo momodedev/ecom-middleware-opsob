@@ -20,8 +20,8 @@
     benchmark_tenant_password: "OceanBase#!123"
     benchmark_tenant_max_cpu: 6
     benchmark_tenant_min_cpu: 6
-    benchmark_tenant_memory_size: "20G"
-    benchmark_tenant_log_disk_size: "40G"
+    benchmark_tenant_memory_size: "24G"
+    benchmark_tenant_log_disk_size: "180G"
 
     benchmark_tables: 10
     benchmark_table_size: 100000
