@@ -240,6 +240,25 @@ runcmd:
       echo 0 > /proc/sys/kernel/numa_balancing
     fi
   
+  # Configure disk schedulers to "none" for NVMe/SSD disks (after mount)
+  # This avoids kernel I/O scheduling overhead and lets the SSD controller optimize directly
+  - sleep 5  # Brief delay to ensure disks are fully available
+  - |
+    set -ux
+    echo "Configuring disk schedulers for optimal SSD performance..."
+    
+    # Find and configure schedulers for all NVMe devices and SCSI devices
+    for dev in /sys/block/nvme*/queue/scheduler /sys/block/sd*/queue/scheduler /sys/block/vd*/queue/scheduler; do
+      if [ -f "$dev" ] 2>/dev/null; then
+        echo "none" > "$dev" 2>/dev/null || echo "  Note: Could not set $dev (may be read-only)"
+        echo "  Set $(dirname $dev)/../ to 'none' scheduler"
+      fi
+    done
+    
+    # Verify disk schedulers were set correctly
+    echo "Current scheduler settings:"
+    cat /sys/block/*/queue/scheduler 2>/dev/null | sort | uniq || true
+  
   # Log cloud-init bootstrap completion (before OS upgrade)
   - echo "Cloud-init bootstrap completed at $(date)" > /var/log/oceanbase-bootstrap-complete.log
 

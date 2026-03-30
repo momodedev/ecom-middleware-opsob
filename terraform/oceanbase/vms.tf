@@ -178,6 +178,7 @@ resource "azurerm_virtual_machine_data_disk_attachment" "oceanbase_redo" {
   managed_disk_id    = azurerm_managed_disk.oceanbase_redo[count.index].id
   virtual_machine_id = azurerm_linux_virtual_machine.oceanbase_observers[count.index].id
   lun                = "11"
-  # Premium SSD v2 (PremiumV2_LRS) only supports None caching.
-  caching            = "None"
+  # Enable write-only caching for redo (log) disk to improve write performance
+  # while avoiding cache coherency issues on read operations.
+  caching            = "WriteOnly"
 }

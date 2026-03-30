@@ -101,6 +101,39 @@
     create: yes
     mode: 0755
 
+- name: Configure disk schedulers to "none" for optimal SSD performance
+  blockinfile:
+    path: /etc/rc.d/rc.local
+    block: |
+      # Configure disk schedulers to "none" for NVMe and SSD disks
+      # This avoids kernel I/O scheduling overhead and lets the SSD controller optimize directly
+      for dev in /sys/block/nvme*/queue/scheduler /sys/block/sd*/queue/scheduler /sys/block/vd*/queue/scheduler; do
+        if [ -f "$dev" ] 2>/dev/null; then
+          echo "none" > "$dev" 2>/dev/null || true
+        fi
+      done
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - DISK SCHEDULER TUNING"
+    insertafter: "if test -f /sys/kernel/mm/transparent_hugepage/defrag; then"
+    create: yes
+    mode: 0755
+
+- name: Verify disk scheduler settings
+  ansible.builtin.shell: |
+    set -ux
+    echo "Current disk scheduler settings:"
+    for dev in /sys/block/nvme*/queue/scheduler /sys/block/sd*/queue/scheduler /sys/block/vd*/queue/scheduler; do
+      if [ -f "$dev" ] 2>/dev/null; then
+        echo "  $(dirname $dev)/../: $(cat $dev)"
+      fi
+    done
+  register: scheduler_check
+  changed_when: false
+  ignore_errors: true
+
+- name: Display scheduler verification results
+  ansible.builtin.debug:
+    msg: "{{ scheduler_check.stdout_lines }}"
+
 - name: Create admin user for OceanBase
   user:
     name: "{{ oceanbase_admin_user }}"
