@@ -1,0 +1,9 @@
+timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors,exit_code,status,cpu_usage_pct,memory_usage_pct,disk_io_mbps
+2026-03-30T03:29:57Z,d8s_v6_rocky_nmysql,oltp_read_only,20,1534.31,17.63,13.03,7365040,0,0,ok,38.3,75.2,8.98
+2026-03-30T03:35:28Z,d8s_v6_rocky_nmysql,oltp_read_only,50,2769.66,23.95,18.05,13295328,0,0,ok,55.9,77.6,11.20
+2026-03-30T03:40:59Z,d8s_v6_rocky_nmysql,oltp_read_only,100,2992.11,87.56,33.42,14363568,0,0,ok,58.5,78.7,10.99
+2026-03-30T03:46:31Z,d8s_v6_rocky_nmysql,oltp_read_only,200,2998.18,158.63,66.69,14396352,0,0,ok,60.0,78.4,11.69
+2026-03-30T03:52:02Z,d8s_v6_rocky_nmysql,oltp_read_write,20,806.53,29.72,24.80,4839640,0,0,ok,51.1,83.2,14.57
+2026-03-30T03:57:33Z,d8s_v6_rocky_nmysql,oltp_read_write,50,1429.53,44.17,34.97,8578260,0,0,ok,65.0,89.2,15.79
+2026-03-30T04:03:04Z,d8s_v6_rocky_nmysql,oltp_read_write,100,1618.33,118.92,61.79,9711720,0,0,ok,69.5,92.1,18.99
+2026-03-30T04:08:36Z,d8s_v6_rocky_nmysql,oltp_read_write,200,1712.03,219.36,116.80,10275240,0,0,ok,70.9,92.1,16.85
