@@ -1,0 +1,16 @@
+[oceanbase]
+centos-ob-observer-0 ansible_host=10.100.1.6 private_ip=10.100.1.6
+centos-ob-observer-1 ansible_host=10.100.1.4 private_ip=10.100.1.4
+centos-ob-observer-2 ansible_host=10.100.1.5 private_ip=10.100.1.5
+
+[oceanbase:vars]
+ansible_user=oceanadmin
+ansible_ssh_private_key_file=~/.ssh/id_rsa
+ansible_python_interpreter=/usr/bin/python3
+oceanbase_cluster_name=ob_cluster
+oceanbase_root_password=OceanBase#!123
+oceanbase_memory_limit=26G
+oceanbase_cpu_count=8
+oceanbase_mysql_port=2881
+oceanbase_rpc_port=2882
+oceanbase_obshell_port=2886

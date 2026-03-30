@@ -20,8 +20,8 @@
     benchmark_tenant_password: "OceanBase#!123"
     benchmark_tenant_max_cpu: 6
     benchmark_tenant_min_cpu: 6
-    benchmark_tenant_memory_size: "20G"
-    benchmark_tenant_log_disk_size: "40G"
+    benchmark_tenant_memory_size: "24G"
+    benchmark_tenant_log_disk_size: "180G"
 
     benchmark_tables: 10
     benchmark_table_size: 100000
@@ -48,6 +48,11 @@
     benchmark_prepare_retries: 3
     benchmark_prepare_retry_delay: 5
     benchmark_fail_on_case_error: false
+
+    # System metrics collection from observer nodes during benchmark
+    metrics_observer_ips: "{{ mysql_host }}"
+    metrics_ssh_user: "oceanadmin"
+    metrics_ssh_key: "/home/azureadmin/.ssh/id_rsa"
 
   tasks:
     - name: Ensure benchmark output directory exists
@@ -169,7 +174,7 @@
       copy:
         dest: "{{ benchmark_output_csv }}"
         mode: "0644"
-        content: "timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors,exit_code,status\n"
+        content: "timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors,exit_code,status,cpu_usage_pct,memory_usage_pct,disk_io_mbps\n"
 
     - name: Set benchmark OBD controller host
       set_fact:
@@ -376,6 +381,21 @@
         set -uo pipefail
         now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         result_file=$(mktemp)
+
+        # ---------- Metrics: setup ----------
+        SSH_M_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes -i {{ metrics_ssh_key | default('/home/azureadmin/.ssh/id_rsa') }}"
+        M_USER="{{ metrics_ssh_user | default('oceanadmin') }}"
+        M_IPS=$(echo "{{ metrics_observer_ips | default(mysql_host) }}" | tr -d '"')
+        snap_dir=$(mktemp -d)
+
+        # ---------- Metrics: pre-snapshot ----------
+        for mip in $M_IPS; do
+          ssh $SSH_M_OPTS ${M_USER}@${mip} \
+            "head -1 /proc/stat; echo ===SEP===; cat /proc/diskstats" \
+            2>/dev/null > "${snap_dir}/before_${mip}" || true
+        done
+
+        # ---------- Sysbench run ----------
         sysbench /usr/share/sysbench/{{ item.0 }}.lua \
           --db-driver=mysql \
           --mysql-host={{ mysql_host | quote }} \
@@ -394,6 +414,64 @@
         result="$(cat "$result_file")"
         rm -f "$result_file"
 
+        # ---------- Metrics: post-snapshot ----------
+        for mip in $M_IPS; do
+          ssh $SSH_M_OPTS ${M_USER}@${mip} \
+            "head -1 /proc/stat; echo ===SEP===; cat /proc/diskstats; echo ===SEP===; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo" \
+            2>/dev/null > "${snap_dir}/after_${mip}" || true
+        done
+
+        # ---------- Metrics: compute averages across observers ----------
+        cpu_sum=0; mem_sum=0; disk_sum=0; obs_count=0
+        for mip in $M_IPS; do
+          bf="${snap_dir}/before_${mip}"
+          af="${snap_dir}/after_${mip}"
+          [ -s "$bf" ] && [ -s "$af" ] || continue
+          obs_count=$((obs_count + 1))
+
+          # CPU usage %: delta of /proc/stat idle vs total ticks
+          cpu_b=$(head -1 "$bf")
+          cpu_a=$(head -1 "$af")
+          c=$(printf '%s\n%s\n' "$cpu_b" "$cpu_a" | awk '
+            NR==1 { for(i=2;i<=NF;i++) tb+=$i; ib=$5 }
+            NR==2 { for(i=2;i<=NF;i++) ta+=$i; ia=$5
+              d=ta-tb; id=ia-ib
+              if(d>0) printf "%.1f",100*(1-id/d); else print "0.0"
+            }')
+          c=${c:-0.0}
+          cpu_sum=$(awk "BEGIN{printf \"%.1f\",$cpu_sum+$c}")
+
+          # Memory usage %: (MemTotal - MemAvailable) / MemTotal
+          m=$(awk 'BEGIN{p=0} /===SEP===/{p++;next}
+            p>=2 && /^MemTotal/{t=$2}
+            p>=2 && /^MemAvailable/{a=$2}
+            END{if(t>0) printf "%.1f",(t-a)/t*100; else print "0.0"}' "$af")
+          m=${m:-0.0}
+          mem_sum=$(awk "BEGIN{printf \"%.1f\",$mem_sum+$m}")
+
+          # Disk IO MB/s: delta of sectors read+written across all block devices
+          disk_b=$(awk 'BEGIN{p=0} /===SEP===/{p=1;next} p==1' "$bf")
+          disk_a=$(awk 'BEGIN{p=0} /===SEP===/{p++;next} p==1' "$af")
+          d=$(printf 'BEFORE\n%s\nAFTER\n%s\n' "$disk_b" "$disk_a" | awk -v dur={{ benchmark_run_sec }} '
+            /^BEFORE/ {ph="b";next} /^AFTER/ {ph="a";next}
+            $3 ~ /^(sd[a-z]|nvme[0-9]+n[0-9]+)$/ {
+              if(ph=="b"){br+=$6;bw+=$10} else{ar+=$6;aw+=$10}
+            }
+            END{delta=(ar-br)+(aw-bw); printf "%.2f",delta*512/1024/1024/dur}')
+          d=${d:-0.00}
+          disk_sum=$(awk "BEGIN{printf \"%.2f\",$disk_sum+$d}")
+        done
+
+        if [ "$obs_count" -gt 0 ]; then
+          cpu_pct=$(awk "BEGIN{printf \"%.1f\",$cpu_sum/$obs_count}")
+          mem_pct=$(awk "BEGIN{printf \"%.1f\",$mem_sum/$obs_count}")
+          disk_io_mbps=$(awk "BEGIN{printf \"%.2f\",$disk_sum/$obs_count}")
+        else
+          cpu_pct="0.0"; mem_pct="0.0"; disk_io_mbps="0.00"
+        fi
+        rm -rf "$snap_dir"
+
+        # ---------- Parse sysbench results ----------
         tps=$(echo "$result" | awk -F'[()]' '/transactions:/ {gsub(/ per sec\./, "", $2); print $2}' | awk '{print $1}' | tail -1)
         p95=$(echo "$result" | awk '/95th percentile:/ {print $3}' | tail -1)
         avg_lat=$(echo "$result" | awk '/avg:/ {print $2}' | tail -1)
@@ -418,7 +496,7 @@
           status="failed"
         fi
 
-        echo "$now,{{ benchmark_label }},{{ item.0 }},{{ item.1 }},$tps,$p95,$avg_lat,$total_q,$errs,$rc,$status" >> {{ benchmark_output_csv | quote }}
+        echo "$now,{{ benchmark_label }},{{ item.0 }},{{ item.1 }},$tps,$p95,$avg_lat,$total_q,$errs,$rc,$status,$cpu_pct,$mem_pct,$disk_io_mbps" >> {{ benchmark_output_csv | quote }}
 
         if [ "$rc" -ne 0 ]; then
           echo "Benchmark case failed: workload={{ item.0 }} threads={{ item.1 }} rc=$rc" >&2
