@@ -178,7 +178,7 @@ resource "azurerm_virtual_machine_data_disk_attachment" "oceanbase_redo" {
   managed_disk_id    = azurerm_managed_disk.oceanbase_redo[count.index].id
   virtual_machine_id = azurerm_linux_virtual_machine.oceanbase_observers[count.index].id
   lun                = "11"
-  # Enable write-only caching for redo (log) disk to improve write performance
-  # while avoiding cache coherency issues on read operations.
-  caching            = "WriteOnly"
+  # Disable caching for redo (log) disk — sequential writes don't benefit from
+  # host caching, and "None" avoids cache coherency overhead.
+  caching            = "None"
 }
