@@ -1,0 +1,9 @@
+timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors,exit_code,status,cpu_usage_pct,memory_usage_pct,disk_io_mbps
+2026-03-30T16:22:53Z,20260330T161511Z_d8s_v5_centos_nmysql,oltp_read_only,20,1679.31,18.61,11.91,8061136,0,0,ok,35.2,73.9,9.45
+2026-03-30T16:28:24Z,20260330T161511Z_d8s_v5_centos_nmysql,oltp_read_only,50,2736.25,26.68,18.27,13134928,0,0,ok,51.8,75.6,11.43
+2026-03-30T16:33:55Z,20260330T161511Z_d8s_v5_centos_nmysql,oltp_read_only,100,2784.38,44.98,35.91,13366608,0,0,ok,51.6,77.2,11.76
+2026-03-30T16:39:27Z,20260330T161511Z_d8s_v5_centos_nmysql,oltp_read_only,200,2738.16,82.96,73.03,13146128,0,0,ok,51.3,78.4,11.38
+2026-03-30T16:44:58Z,20260330T161511Z_d8s_v5_centos_nmysql,oltp_read_write,20,910.42,29.72,21.96,5463140,0,0,ok,49.7,82.0,16.85
+2026-03-30T16:50:29Z,20260330T161511Z_d8s_v5_centos_nmysql,oltp_read_write,50,1431.57,52.89,34.92,8590400,0,0,ok,62.8,82.9,28.85
+2026-03-30T16:56:00Z,20260330T161511Z_d8s_v5_centos_nmysql,oltp_read_write,100,1570.51,78.60,63.67,9424640,0,0,ok,64.6,83.1,20.24
+2026-03-30T17:01:31Z,20260330T161511Z_d8s_v5_centos_nmysql,oltp_read_write,200,1470.09,153.02,136.02,8823540,0,0,ok,64.3,83.1,18.27

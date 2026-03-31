@@ -29,7 +29,7 @@ cd ~/ecom-middleware-opsob/ansible_ob/
 
 ### 3. Pull Latest Code
 ```
-git pull origin t3
+git pull origin t6
 ```
 
 ### 4. Run Monitoring Playbook
