@@ -57,7 +57,6 @@
         path: "/etc/prometheus/file_sd/{{ item }}"
         state: absent
       loop:
-        - oceanbase_targets.json
         - node_targets.json
 
     - name: Render CentOS node exporter targets file
