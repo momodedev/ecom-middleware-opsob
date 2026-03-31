@@ -1,0 +1,15 @@
+---
+oceanbase_obagent_service_name: obagent.service
+oceanbase_obagent_install_root: /home/admin/obagent
+oceanbase_obagent_metrics_port: 9308
+oceanbase_obagent_sql_port: 2881
+oceanbase_obagent_rpc_port: 2882
+oceanbase_obagent_cluster_name: "{{ oceanbase_cluster_name | default('ob_cluster') }}"
+oceanbase_obagent_monitor_user: root@sys
+oceanbase_obagent_monitor_password: "{{ oceanbase_root_password | default('OceanBase#!123') }}"
+oceanbase_obagent_package_url: https://github.com/oceanbase/obagent/releases/download/v4.2.2-release-20240117173031/obagent-4.2.2-100000042024011120.el7.x86_64.rpm
+oceanbase_obagent_package_path: /tmp/obagent-4.2.2.el7.x86_64.rpm
+oceanbase_obagent_install_path: /oceanbase/server
+oceanbase_obagent_data_path: /oceanbase/data
+oceanbase_obagent_log_path: /oceanbase/server/log
+oceanbase_obagent_coredump_path: /oceanbase/data

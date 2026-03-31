@@ -1,0 +1,78 @@
+---
+- name: Ensure admin group exists for obagent RPM ownership
+  ansible.builtin.group:
+    name: admin
+    system: yes
+    state: present
+  tags: oceanbase_obagent
+
+- name: Ensure admin user exists for obagent RPM ownership
+  ansible.builtin.user:
+    name: admin
+    group: admin
+    home: /home/admin
+    shell: /bin/bash
+    system: yes
+    create_home: yes
+    state: present
+  tags: oceanbase_obagent
+
+- name: Download official obagent RPM
+  ansible.builtin.get_url:
+    url: "{{ oceanbase_obagent_package_url }}"
+    dest: "{{ oceanbase_obagent_package_path }}"
+    mode: "0644"
+  tags: oceanbase_obagent
+
+- name: Install obagent RPM
+  ansible.builtin.yum:
+    name: "{{ oceanbase_obagent_package_path }}"
+    state: present
+    disable_gpg_check: true
+  tags: oceanbase_obagent
+
+- name: Configure obagent properties for OceanBase monitoring
+  ansible.builtin.command:
+    argv:
+      - "{{ oceanbase_obagent_install_root }}/bin/ob_agentctl"
+      - config
+      - change
+      - "ocp.agent.monitor.http.port={{ oceanbase_obagent_metrics_port }}"
+      - "agent.http.basic.auth.metricAuthEnabled=false"
+      - "monagent.ob.monitor.user={{ oceanbase_obagent_monitor_user }}"
+      - "monagent.ob.monitor.password={{ oceanbase_obagent_monitor_password }}"
+      - "monagent.ob.sql.port={{ oceanbase_obagent_sql_port }}"
+      - "monagent.ob.rpc.port={{ oceanbase_obagent_rpc_port }}"
+      - "monagent.host.ip={{ hostvars[inventory_hostname]['private_ip'] | default(ansible_host) }}"
+      - "monagent.ob.cluster.name={{ oceanbase_obagent_cluster_name }}"
+      - "monagent.ob.zone.name=zone{{ groups['oceanbase'].index(inventory_hostname) + 1 }}"
+      - monagent.pipeline.ob.status=active
+      - "ob.install.path={{ oceanbase_obagent_install_path }}"
+      - "ob.data.path={{ oceanbase_obagent_data_path }}"
+      - "ob.log.path={{ oceanbase_obagent_log_path }}"
+      - "observer.log.path={{ oceanbase_obagent_log_path }}"
+      - "observer.coredump.path={{ oceanbase_obagent_coredump_path }}"
+  register: oceanbase_obagent_configure
+  changed_when: oceanbase_obagent_configure.rc == 0
+  tags: oceanbase_obagent
+
+- name: Restart obagent service
+  ansible.builtin.systemd:
+    name: "{{ oceanbase_obagent_service_name }}"
+    daemon_reload: true
+    enabled: true
+    state: restarted
+  tags: oceanbase_obagent
+
+- name: Verify obagent basic metrics endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ oceanbase_obagent_metrics_port }}/metrics/ob/basic"
+    method: GET
+    return_content: true
+    status_code: 200
+  register: oceanbase_obagent_metrics
+  retries: 10
+  delay: 3
+  until: oceanbase_obagent_metrics is succeeded and ('ob_' in oceanbase_obagent_metrics.content)
+  changed_when: false
+  tags: oceanbase_obagent
