@@ -43,6 +43,7 @@
   become: true
   roles:
     - role: ../roles/common/oceanbase_obagent
+    - role: ../roles/common/obshell_local_prometheus
 
 - name: Generate Prometheus targets for CentOS cluster
   hosts: localhost

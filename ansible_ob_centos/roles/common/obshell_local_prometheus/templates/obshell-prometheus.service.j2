@@ -1,0 +1,18 @@
+[Unit]
+Description=Observer-local Prometheus for OBShell dashboards
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User={{ obshell_local_prometheus_user }}
+Group={{ obshell_local_prometheus_group }}
+ExecStart=/usr/local/bin/prometheus \
+  --config.file={{ obshell_local_prometheus_config_dir }}/prometheus.yml \
+  --storage.tsdb.path={{ obshell_local_prometheus_data_dir }} \
+  --web.listen-address={{ obshell_local_prometheus_listen_address }} \
+  --web.enable-lifecycle
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

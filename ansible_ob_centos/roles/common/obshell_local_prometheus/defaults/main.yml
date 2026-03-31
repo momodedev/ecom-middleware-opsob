@@ -1,0 +1,10 @@
+---
+prometheus_version: "2.50.0"
+obshell_local_prometheus_listen_address: "127.0.0.1:9090"
+obshell_local_prometheus_user: prometheus
+obshell_local_prometheus_group: prometheus
+obshell_local_prometheus_config_dir: /etc/obshell-prometheus
+obshell_local_prometheus_data_dir: /var/lib/obshell-prometheus
+obshell_local_prometheus_target: "127.0.0.1:9308"
+obshell_local_prometheus_rules_dir: /home/admin/obagent/conf/prometheus_config/rules
+obshell_local_prometheus_service_name: obshell-prometheus.service

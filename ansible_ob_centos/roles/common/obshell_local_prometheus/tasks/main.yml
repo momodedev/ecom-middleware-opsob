@@ -1,0 +1,82 @@
+---
+- name: Ensure Prometheus user exists for OBShell local Prometheus
+  ansible.builtin.user:
+    name: "{{ obshell_local_prometheus_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+  tags: obshell_local_prometheus
+
+- name: Download Prometheus archive for OBShell local Prometheus
+  ansible.builtin.get_url:
+    url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+    dest: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+    mode: '0644'
+  tags: obshell_local_prometheus
+
+- name: Extract Prometheus archive for OBShell local Prometheus
+  ansible.builtin.unarchive:
+    src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+    dest: /opt
+    remote_src: true
+    creates: "/opt/prometheus-{{ prometheus_version }}.linux-amd64"
+  tags: obshell_local_prometheus
+
+- name: Install Prometheus binaries for OBShell local Prometheus
+  ansible.builtin.copy:
+    src: "/opt/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: '0755'
+    remote_src: true
+  loop:
+    - prometheus
+    - promtool
+  tags: obshell_local_prometheus
+
+- name: Create OBShell local Prometheus configuration and data directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default(obshell_local_prometheus_user) }}"
+    group: "{{ item.group | default(obshell_local_prometheus_group) }}"
+    mode: '0755'
+  loop:
+    - path: "{{ obshell_local_prometheus_config_dir }}"
+    - path: "{{ obshell_local_prometheus_data_dir }}"
+  tags: obshell_local_prometheus
+
+- name: Deploy OBShell local Prometheus configuration
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: "{{ obshell_local_prometheus_config_dir }}/prometheus.yml"
+    owner: "{{ obshell_local_prometheus_user }}"
+    group: "{{ obshell_local_prometheus_group }}"
+    mode: '0644'
+  tags: obshell_local_prometheus
+
+- name: Deploy OBShell local Prometheus systemd unit
+  ansible.builtin.template:
+    src: obshell-prometheus.service.j2
+    dest: "/etc/systemd/system/{{ obshell_local_prometheus_service_name }}"
+    mode: '0644'
+  tags: obshell_local_prometheus
+
+- name: Reload systemd and start OBShell local Prometheus
+  ansible.builtin.systemd:
+    name: "{{ obshell_local_prometheus_service_name }}"
+    daemon_reload: true
+    enabled: true
+    state: restarted
+  tags: obshell_local_prometheus
+
+- name: Verify OBShell local Prometheus is listening
+  ansible.builtin.uri:
+    url: "http://{{ obshell_local_prometheus_listen_address }}/-/healthy"
+    method: GET
+    status_code: 200
+  register: obshell_local_prometheus_health
+  retries: 10
+  delay: 3
+  until: obshell_local_prometheus_health is succeeded
+  changed_when: false
+  tags: obshell_local_prometheus

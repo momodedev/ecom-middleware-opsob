@@ -52,6 +52,9 @@
       - "ob.log.path={{ oceanbase_obagent_log_path }}"
       - "observer.log.path={{ oceanbase_obagent_log_path }}"
       - "observer.coredump.path={{ oceanbase_obagent_coredump_path }}"
+    - "monagent.ob.metric.sql_audit_enabled=true"
+    - "monagent.ob.metric.gts_enabled=true"
+    - "monagent.ob.metric.cpu_allocation_enabled=true"
   register: oceanbase_obagent_configure
   changed_when: oceanbase_obagent_configure.rc == 0
   tags: oceanbase_obagent
