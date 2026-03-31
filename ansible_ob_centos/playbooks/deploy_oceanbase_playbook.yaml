@@ -41,7 +41,7 @@
   hosts: localhost
   connection: local
   gather_facts: false
-  become: yes
+  become: true
   vars:
     prometheus_sd_output_path: "/etc/prometheus/file_sd/oceanbase_targets.json"
     prometheus_ob_exporter_port: 9308
@@ -57,4 +57,4 @@
         src: ../roles/oceanbase/templates/prometheus_oceanbase_targets.json.j2
         dest: "{{ prometheus_sd_output_path }}"
         mode: "0644"
-      ignore_errors: yes
+      ignore_errors: true

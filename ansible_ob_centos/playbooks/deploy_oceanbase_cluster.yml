@@ -43,7 +43,7 @@
 - name: Prepare OceanBase Observer Nodes
   hosts: oceanbase
   become: true
-  gather_facts: yes
+  gather_facts: true
   roles:
     - role: ../roles/oceanbase
     - role: ../roles/common/oceanbase_obagent
@@ -51,7 +51,7 @@
 - name: Configure OceanBase Cluster
   hosts: oceanbase[0]
   become: true
-  gather_facts: yes
+  gather_facts: true
   vars:
     ansible_ssh_common_args: ''
   tasks:
@@ -68,7 +68,7 @@
       environment:
         PATH: /home/admin/.local/bin:/home/admin/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/admin/.oceanbase-all-in-one/bin
       register: cluster_status
-      ignore_errors: yes
+      ignore_errors: true
 
     - name: Display cluster status
       debug:
@@ -78,7 +78,7 @@
   hosts: localhost
   connection: local
   gather_facts: false
-  become: yes
+  become: true
   vars:
     prometheus_sd_output_path: "/etc/prometheus/file_sd/oceanbase_targets.json"
     prometheus_ob_exporter_port: 9308
@@ -95,7 +95,7 @@
         src: roles/oceanbase/templates/prometheus_oceanbase_targets.json.j2
         dest: "{{ prometheus_sd_output_path }}"
         mode: "0644"
-      ignore_errors: yes
+      ignore_errors: true
       when: groups['oceanbase'] is defined
 
     - name: Display generated targets
