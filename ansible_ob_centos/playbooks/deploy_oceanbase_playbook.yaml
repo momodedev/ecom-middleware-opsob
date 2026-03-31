@@ -35,6 +35,7 @@
   become: true
   roles:
     - role: ../roles/oceanbase
+    - role: ../roles/common/oceanbase_obagent
 
 - name: Generate Prometheus targets for OceanBase exporters
   hosts: localhost

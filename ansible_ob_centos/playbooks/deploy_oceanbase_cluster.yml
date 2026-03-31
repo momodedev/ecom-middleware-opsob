@@ -46,6 +46,7 @@
   gather_facts: yes
   roles:
     - role: ../roles/oceanbase
+    - role: ../roles/common/oceanbase_obagent
 
 - name: Configure OceanBase Cluster
   hosts: oceanbase[0]
