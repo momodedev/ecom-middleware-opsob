@@ -1,0 +1,13 @@
+timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors,exit_code,status,cpu_usage_pct,memory_usage_pct,disk_io_mbps
+2026-04-01T09:44:09Z,d8s_v6_rocky_obproxy_full_rerun,oltp_read_only,20,3862.84,5.99,5.18,18542176,0,0,ok,47.9,94.0,2.81
+2026-04-01T09:49:40Z,d8s_v6_rocky_obproxy_full_rerun,oltp_read_only,50,5732.87,11.87,8.72,27519264,0,0,ok,59.4,94.3,0.85
+2026-04-01T09:55:11Z,d8s_v6_rocky_obproxy_full_rerun,oltp_read_only,100,6431.98,26.20,15.54,30876528,0,0,ok,62.1,93.3,0.99
+2026-04-01T10:00:43Z,d8s_v6_rocky_obproxy_full_rerun,oltp_read_only,200,6695.84,63.32,29.86,32146672,0,0,ok,63.5,93.1,1.90
+2026-04-01T10:06:14Z,d8s_v6_rocky_obproxy_full_rerun,oltp_write_only,20,2335.40,10.27,8.56,4203876,0,0,ok,48.0,94.7,25.62
+2026-04-01T10:11:45Z,d8s_v6_rocky_obproxy_full_rerun,oltp_write_only,50,4890.03,12.52,10.22,8802576,0,0,ok,69.0,95.4,39.64
+2026-04-01T10:17:16Z,d8s_v6_rocky_obproxy_full_rerun,oltp_write_only,100,6435.04,19.29,15.54,11584560,0,0,ok,75.5,95.6,42.42
+2026-04-01T10:22:47Z,d8s_v6_rocky_obproxy_full_rerun,oltp_write_only,200,7131.97,40.37,28.04,12839952,0,0,ok,76.3,96.0,55.21
+2026-04-01T10:28:19Z,d8s_v6_rocky_obproxy_full_rerun,oltp_read_write,20,1288.32,20.00,15.52,7730420,0,0,ok,58.3,96.1,22.30
+2026-04-01T10:33:50Z,d8s_v6_rocky_obproxy_full_rerun,oltp_read_write,50,2153.35,29.72,23.22,12921320,0,0,ok,74.8,95.4,19.46
+2026-04-01T10:39:21Z,d8s_v6_rocky_obproxy_full_rerun,oltp_read_write,100,2117.46,58.92,47.12,12740240,0,0,ok,72.4,95.2,37.92
+2026-04-01T10:44:53Z,d8s_v6_rocky_obproxy_full_rerun,oltp_read_write,200,2646.28,125.52,75.56,15882240,0,0,ok,79.7,95.1,39.40
