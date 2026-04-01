@@ -1,0 +1,16 @@
+[Unit]
+Description=OceanBase OBProxy
+After=network.target
+
+[Service]
+Type=simple
+User=admin
+Group=admin
+WorkingDirectory=/home/admin/obproxy-4.3.6.1
+ExecStart=/home/admin/obproxy-4.3.6.1/bin/obproxy -p 2883 -r 10.100.1.4:2881;10.100.1.5:2881;10.100.1.6:2881 -c ob_cluster -n obproxy-centos -o enable_cluster_checkout=false,enable_compression_protocol=false,syslog_level=INFO
+Restart=always
+RestartSec=5
+LimitNOFILE=655350
+
+[Install]
+WantedBy=multi-user.target
