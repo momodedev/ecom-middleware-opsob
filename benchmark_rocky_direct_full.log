@@ -1,0 +1,54 @@
+=== Rocky Direct Benchmark (No OBProxy) ===
+Start time: Wed Apr  1 04:16:37 AM UTC 2026
+Configuration:
+  Host: 172.17.1.7
+  Port: 2881 (Direct OceanBase)
+  Cluster: 3-node Rocky cluster
+
+Testing connection to OceanBase...
+connected
+1
+
+Connection successful! Running benchmark...
+
+[Wed Apr  1 04:16:37 AM UTC 2026] Test 1/15: workload=oltp_read_only threads=16
+  => TPS=1195.80 P95=27.66 Status=ok
+[Wed Apr  1 04:18:37 AM UTC 2026] Test 2/15: workload=oltp_read_only threads=32
+  => TPS=1203.07 P95=41.85 Status=ok
+[Wed Apr  1 04:20:37 AM UTC 2026] Test 3/15: workload=oltp_read_only threads=64
+  => TPS=1230.19 P95=69.29 Status=ok
+[Wed Apr  1 04:22:37 AM UTC 2026] Test 4/15: workload=oltp_read_only threads=128
+  => TPS=1224.24 P95=123.28 Status=ok
+[Wed Apr  1 04:24:37 AM UTC 2026] Test 5/15: workload=oltp_read_only threads=256
+  => TPS=1228.70 P95=235.74 Status=ok
+[Wed Apr  1 04:26:38 AM UTC 2026] Test 6/15: workload=oltp_write_only threads=16
+  => TPS= P95= Status=ok
+[Wed Apr  1 04:26:38 AM UTC 2026] Test 7/15: workload=oltp_write_only threads=32
+  => TPS= P95= Status=ok
+[Wed Apr  1 04:26:38 AM UTC 2026] Test 8/15: workload=oltp_write_only threads=64
+  => TPS= P95= Status=ok
+[Wed Apr  1 04:26:38 AM UTC 2026] Test 9/15: workload=oltp_write_only threads=128
+  => TPS= P95= Status=ok
+[Wed Apr  1 04:26:38 AM UTC 2026] Test 10/15: workload=oltp_write_only threads=256
+  => TPS= P95= Status=ok
+[Wed Apr  1 04:26:38 AM UTC 2026] Test 11/15: workload=oltp_read_write threads=16
+  => TPS= P95= Status=ok
+[Wed Apr  1 04:26:39 AM UTC 2026] Test 12/15: workload=oltp_read_write threads=32
+  => TPS= P95= Status=ok
+[Wed Apr  1 04:26:39 AM UTC 2026] Test 13/15: workload=oltp_read_write threads=64
+  => TPS= P95= Status=ok
+[Wed Apr  1 04:26:39 AM UTC 2026] Test 14/15: workload=oltp_read_write threads=128
+  => TPS= P95= Status=ok
+[Wed Apr  1 04:26:39 AM UTC 2026] Test 15/15: workload=oltp_read_write threads=256
+  => TPS= P95= Status=ok
+
+=== Benchmark Complete ===
+Results: /tmp/oceanbase-bench/d8s_v5_rocky_direct.csv
+End time: Wed Apr  1 04:26:40 AM UTC 2026
+Total tests: 15
+CSV lines: 16
+
+First few results:
+2026-04-01T04:26:39Z,d8s_v5_rocky_direct,oltp_read_write,64,,,,,,0,ok,0.0,0.0,0.00
+2026-04-01T04:26:39Z,d8s_v5_rocky_direct,oltp_read_write,128,,,,,,0,ok,0.0,0.0,0.00
+2026-04-01T04:26:39Z,d8s_v5_rocky_direct,oltp_read_write,256,,,,,,0,ok,0.0,0.0,0.00
