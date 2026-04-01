@@ -3,7 +3,7 @@
 # run_oceanbase_benchmark_nmysql.sh  (CentOS cluster variant)
 #
 # OceanBase sysbench benchmark script following Ruizhen Huang's test spec:
-#   - 90 tables × 500,000 rows (~10 GB+)
+#   - 90 tables Ã— 500,000 rows (~10 GB+)
 #   - 300 s run time per test case
 #   - 120 s buffer-pool warmup (50 threads, read_only, results discarded)
 #   - Workloads: oltp_read_only, oltp_read_write
@@ -306,7 +306,7 @@ echo "=========================================="
 echo " OceanBase Benchmark (nmysql spec)"
 echo " Label:   ${CLUSTER_LABEL}"
 echo " Host:    ${MYSQL_HOST}:${MYSQL_PORT}"
-echo " Tables:  ${TABLES} × ${TABLE_SIZE} rows"
+echo " Tables:  ${TABLES} Ã— ${TABLE_SIZE} rows"
 echo " Run:     ${RUN_TIME}s per case"
 echo " Warmup:  ${WARMUP_TIME}s (${WARMUP_THREADS} threads)"
 echo " Threads: ${THREADS_LIST}"
@@ -319,7 +319,7 @@ mysql -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" \
   -e "CREATE DATABASE IF NOT EXISTS ${MYSQL_DB};" 2>/dev/null || true
 
 # Step 1: Prepare data
-echo "[1/4] Preparing test data (${TABLES} tables × ${TABLE_SIZE} rows, ~10 GB+)..."
+echo "[1/4] Preparing test data (${TABLES} tables Ã— ${TABLE_SIZE} rows, ~10 GB+)..."
 echo "      Cleaning up any existing tables first..."
 $SYSBENCH_BASE --threads="$PREPARE_THREADS" oltp_read_only cleanup 2>/dev/null || true
 
