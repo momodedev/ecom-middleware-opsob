@@ -39,3 +39,35 @@ scrape_configs:
       - files:
           - '/etc/prometheus/file_sd/oceanbase_targets.json'
         refresh_interval: 30s
+
+  - job_name: 'node'
+    metrics_path: /metrics/node/host
+    scheme: http
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/file_sd/oceanbase_targets.json'
+        refresh_interval: 30s
+
+  - job_name: 'ob_basic'
+    metrics_path: /metrics/ob/basic
+    scheme: http
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/file_sd/oceanbase_targets.json'
+        refresh_interval: 30s
+
+  - job_name: 'ob_extra'
+    metrics_path: /metrics/ob/extra
+    scheme: http
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/file_sd/oceanbase_targets.json'
+        refresh_interval: 30s
+
+  - job_name: 'agent'
+    metrics_path: /metrics/stat
+    scheme: http
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/file_sd/oceanbase_targets.json'
+        refresh_interval: 30s
