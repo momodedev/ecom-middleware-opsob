@@ -1,0 +1,16 @@
+timestamp,label,workload,threads,tps,p95_latency,avg_latency,total_queries,errors,rc,status,cpu_pct,mem_pct,disk_io_mbps
+2026-04-01T05:22:30Z,d8s_v5_rocky_obproxy,oltp_read_only,16,1451.18,25.28,11.02,2786784,0,0,ok,0.0,0.0,0.00
+2026-04-01T05:24:30Z,d8s_v5_rocky_obproxy,oltp_read_only,32,1640.05,37.56,19.51,3149696,0,0,ok,0.0,0.0,0.00
+2026-04-01T05:26:30Z,d8s_v5_rocky_obproxy,oltp_read_only,64,1709.34,69.29,37.43,3283088,0,0,ok,0.0,0.0,0.00
+2026-04-01T05:28:30Z,d8s_v5_rocky_obproxy,oltp_read_only,128,1732.42,161.51,73.86,3328496,0,0,ok,0.0,0.0,0.00
+2026-04-01T05:30:30Z,d8s_v5_rocky_obproxy,oltp_read_only,256,1728.14,356.70,148.03,3322592,0,0,ok,0.0,0.0,0.00
+2026-04-01T05:32:30Z,d8s_v5_rocky_obproxy,oltp_write_only,16,,,,,,0,ok,0.0,0.0,0.00
+2026-04-01T05:32:31Z,d8s_v5_rocky_obproxy,oltp_write_only,32,,,,,,0,ok,0.0,0.0,0.00
+2026-04-01T05:32:31Z,d8s_v5_rocky_obproxy,oltp_write_only,64,,,,,,0,ok,0.0,0.0,0.00
+2026-04-01T05:32:31Z,d8s_v5_rocky_obproxy,oltp_write_only,128,,,,,,0,ok,0.0,0.0,0.00
+2026-04-01T05:32:31Z,d8s_v5_rocky_obproxy,oltp_write_only,256,,,,,,0,ok,0.0,0.0,0.00
+2026-04-01T05:32:32Z,d8s_v5_rocky_obproxy,oltp_read_write,16,,,,,,0,ok,0.0,0.0,0.00
+2026-04-01T05:32:32Z,d8s_v5_rocky_obproxy,oltp_read_write,32,,,,,,0,ok,0.0,0.0,0.00
+2026-04-01T05:32:32Z,d8s_v5_rocky_obproxy,oltp_read_write,64,,,,,,0,ok,0.0,0.0,0.00
+2026-04-01T05:32:32Z,d8s_v5_rocky_obproxy,oltp_read_write,128,,,,,,0,ok,0.0,0.0,0.00
+2026-04-01T05:32:32Z,d8s_v5_rocky_obproxy,oltp_read_write,256,,,,,,0,ok,0.0,0.0,0.00
