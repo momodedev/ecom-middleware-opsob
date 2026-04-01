@@ -1,0 +1,11 @@
+timestamp,label,workload,threads,tps,p95_latency,avg_latency,total_queries,errors,rc,status,cpu_pct,mem_pct,disk_io_mbps
+2026-04-01T06:18:16Z,d8s_v5_rocky_direct,oltp_write_only,16,2023.49,9.91,7.91,1457022,0,0,ok,0.0,0.0,0.00
+2026-04-01T06:20:16Z,d8s_v5_rocky_direct,oltp_write_only,32,3720.92,11.04,8.60,2679474,0,0,ok,0.0,0.0,0.00
+2026-04-01T06:22:16Z,d8s_v5_rocky_direct,oltp_write_only,64,4300.45,25.74,14.86,3101430,0,0,ok,0.0,0.0,0.00
+2026-04-01T06:24:17Z,d8s_v5_rocky_direct,oltp_write_only,128,5314.20,34.33,24.08,3826836,0,0,ok,0.0,0.0,0.00
+2026-04-01T06:26:17Z,d8s_v5_rocky_direct,oltp_write_only,256,4625.20,89.16,55.24,3338001,6,0,ok,0.0,0.0,0.00
+2026-04-01T06:28:17Z,d8s_v5_rocky_direct,oltp_read_write,16,492.82,48.34,32.46,1183140,0,0,ok,0.0,0.0,0.00
+2026-04-01T06:30:17Z,d8s_v5_rocky_direct,oltp_read_write,32,582.94,75.82,54.88,1399580,0,0,ok,0.0,0.0,0.00
+2026-04-01T06:32:17Z,d8s_v5_rocky_direct,oltp_read_write,64,595.65,132.49,107.41,1430520,0,0,ok,0.0,0.0,0.00
+2026-04-01T06:34:17Z,d8s_v5_rocky_direct,oltp_read_write,128,642.78,231.53,199.01,1544720,0,0,ok,0.0,0.0,0.00
+2026-04-01T06:36:18Z,d8s_v5_rocky_direct,oltp_read_write,256,566.05,493.24,451.81,1362080,0,0,ok,0.0,0.0,0.00

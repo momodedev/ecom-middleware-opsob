@@ -1,52 +1,52 @@
-# Rocky Direct vs OBProxy Performance Comparison
+# Rocky Direct vs OBProxy — Full Performance Comparison
 
 **Date:** 2026-04-01  
 **Cluster:** 3-node Rocky Linux OceanBase (D8s_v6)  
 **Direct path:** 172.17.1.7:2881 (OceanBase native)  
 **Proxy path:**  172.17.1.7:2883 (OBProxy)  
-**Dataset:** 10 tables × 100,000 rows (sbtest)  
-**Duration per test:** 120 s  
+**Dataset:** 10 tables × 100,000 rows (sbtest), 120 s per test  
+**OB session overrides:** ob_trx_timeout=100s, ob_trx_lock_timeout=10s  
 
 ## oltp_read_only
 
-| Threads | Direct TPS | Proxy TPS | TPS Δ | Direct P95 (ms) | Proxy P95 (ms) | P95 Δ | Both Status |
-|--------:|-----------:|----------:|------:|----------------:|---------------:|------:|-------------|
-|      16 |    1195.80 |   1451.18 | +21.4% |           27.66 |          25.28 | -8.6% | ok |
-|      32 |    1203.07 |   1640.05 | +36.3% |           41.85 |          37.56 | -10.3% | ok |
-|      64 |    1230.19 |   1709.34 | +38.9% |           69.29 |          69.29 | +0.0% | ok |
-|     128 |    1224.24 |   1732.42 | +41.5% |          123.28 |         161.51 | +31.0% | ok |
-|     256 |    1228.70 |   1728.14 | +40.6% |          235.74 |         356.70 | +51.3% | ok |
+| Threads | Direct TPS | Proxy TPS | TPS Δ | Direct P95 ms | Proxy P95 ms | P95 Δ | Status (D/P) |
+|--------:|-----------:|----------:|------:|--------------:|-------------:|------:|:-------------|
+|      16 |    1195.80 |   1451.18 | +21.4% |         27.66 |        25.28 |  -8.6% | ok/ok |
+|      32 |    1203.07 |   1640.05 | +36.3% |         41.85 |        37.56 | -10.3% | ok/ok |
+|      64 |    1230.19 |   1709.34 | +38.9% |         69.29 |        69.29 |  +0.0% | ok/ok |
+|     128 |    1224.24 |   1732.42 | +41.5% |        123.28 |       161.51 | +31.0% | ok/ok |
+|     256 |    1228.70 |   1728.14 | +40.6% |        235.74 |       356.70 | +51.3% | ok/ok |
 
 ## oltp_write_only
 
-| Threads | Direct TPS | Proxy TPS | TPS Δ | Direct P95 (ms) | Proxy P95 (ms) | P95 Δ | Both Status |
-|--------:|-----------:|----------:|------:|----------------:|---------------:|------:|-------------|
-|      16 |        N/A |       N/A |   N/A |             N/A |            N/A |   N/A | ok |
-|      32 |        N/A |       N/A |   N/A |             N/A |            N/A |   N/A | ok |
-|      64 |        N/A |       N/A |   N/A |             N/A |            N/A |   N/A | ok |
-|     128 |        N/A |       N/A |   N/A |             N/A |            N/A |   N/A | ok |
-|     256 |        N/A |       N/A |   N/A |             N/A |            N/A |   N/A | ok |
+| Threads | Direct TPS | Proxy TPS | TPS Δ | Direct P95 ms | Proxy P95 ms | P95 Δ | Status (D/P) |
+|--------:|-----------:|----------:|------:|--------------:|-------------:|------:|:-------------|
+|      16 |    2023.49 |   1983.27 |  -2.0% |          9.91 |        10.09 |  +1.8% | ok/ok |
+|      32 |    3720.92 |   3624.05 |  -2.6% |         11.04 |        11.24 |  +1.8% | ok/ok |
+|      64 |    4300.45 |   4028.37 |  -6.3% |         25.74 |        27.66 |  +7.5% | ok/ok |
+|     128 |    5314.20 |   6520.43 | +22.7% |         34.33 |        33.72 |  -1.8% | ok/ok |
+|     256 |    4625.20 |   6167.78 | +33.4% |         89.16 |        82.96 |  -7.0% | ok/ok |
 
 ## oltp_read_write
 
-| Threads | Direct TPS | Proxy TPS | TPS Δ | Direct P95 (ms) | Proxy P95 (ms) | P95 Δ | Both Status |
-|--------:|-----------:|----------:|------:|----------------:|---------------:|------:|-------------|
-|      16 |        N/A |       N/A |   N/A |             N/A |            N/A |   N/A | ok |
-|      32 |        N/A |       N/A |   N/A |             N/A |            N/A |   N/A | ok |
-|      64 |        N/A |       N/A |   N/A |             N/A |            N/A |   N/A | ok |
-|     128 |        N/A |       N/A |   N/A |             N/A |            N/A |   N/A | ok |
-|     256 |        N/A |       N/A |   N/A |             N/A |            N/A |   N/A | ok |
+| Threads | Direct TPS | Proxy TPS | TPS Δ | Direct P95 ms | Proxy P95 ms | P95 Δ | Status (D/P) |
+|--------:|-----------:|----------:|------:|--------------:|-------------:|------:|:-------------|
+|      16 |     492.82 |    454.96 |  -7.7% |         48.34 |        57.87 | +19.7% | ok/ok |
+|      32 |     582.94 |    630.47 |  +8.2% |         75.82 |        87.56 | +15.5% | ok/ok |
+|      64 |     595.65 |    660.21 | +10.8% |        132.49 |       176.73 | +33.4% | ok/ok |
+|     128 |     642.78 |    680.24 |  +5.8% |        231.53 |       376.49 | +62.6% | ok/ok |
+|     256 |     566.05 |    691.96 | +22.2% |        493.24 |       787.74 | +59.7% | ok/ok |
 
-## Summary
+## Overall Summary
 
-| Metric | Avg Proxy vs Direct |
-|--------|---------------------|
-| TPS    | +35.8%             |
-| P95    | +12.7%             |
+| Metric | Avg Proxy vs Direct (15 data points) |
+|--------|------|
+| TPS    | +17.6% |
+| P95    | +17.1% |
 
 ### Interpretation
 
-OBProxy shows **35.8% TPS improvement** over direct connections, likely due to connection pooling benefits at higher concurrency.
+OBProxy shows **17.6% average TPS improvement** over direct connections (connection pooling benefit).
 
 ---
-_Generated by compare_direct_vs_proxy.py_
+_Generated by merge_and_compare.py_
