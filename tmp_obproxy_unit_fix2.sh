@@ -1,0 +1,40 @@
+#!/bin/bash
+set -e
+sudo -u admin tee /home/admin/obproxy-4.3.6.1/bin/start_obproxy.sh >/dev/null <<'RUN'
+#!/bin/bash
+exec /home/admin/obproxy-4.3.6.1/bin/obproxy \
+  -p 2883 \
+  -r "10.100.1.4:2881;10.100.1.5:2881;10.100.1.6:2881" \
+  -c ob_cluster \
+  -n obproxy-centos \
+  -o "enable_cluster_checkout=false,enable_compression_protocol=false,observer_sys_username=proxyro,observer_sys_password=OceanBase#!123,syslog_level=INFO"
+RUN
+sudo chmod +x /home/admin/obproxy-4.3.6.1/bin/start_obproxy.sh
+sudo chown admin:admin /home/admin/obproxy-4.3.6.1/bin/start_obproxy.sh
+sudo tee /etc/systemd/system/obproxy.service >/dev/null <<'UNIT'
+[Unit]
+Description=OceanBase OBProxy
+After=network.target
+
+[Service]
+Type=simple
+User=admin
+Group=admin
+WorkingDirectory=/home/admin/obproxy-4.3.6.1
+ExecStart=/home/admin/obproxy-4.3.6.1/bin/start_obproxy.sh
+Restart=always
+RestartSec=5
+LimitNOFILE=655350
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo systemctl daemon-reload
+sudo systemctl disable obproxy >/dev/null 2>&1 || true
+sudo systemctl enable obproxy
+sudo pkill -9 -f '/home/admin/obproxy-4.3.6.1/bin/obproxy' || true
+sudo systemctl restart obproxy
+sleep 5
+sudo systemctl --no-pager -l status obproxy | head -40
+echo '---'
+mysql -h 127.0.0.1 -P 2883 -uroot@sys#ob_cluster -pOceanBase#!123 -N -e 'select 1;'
