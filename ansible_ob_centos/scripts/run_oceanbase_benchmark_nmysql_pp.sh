@@ -2,46 +2,46 @@
 ###############################################################################
 # run_oceanbase_benchmark_nmysql_pp.sh
 #
-# CentOS v9.7 D8s_v5 OceanBase benchmark via OBProxy.
-# Defaults are tuned for the CentOS cluster:
-#   - Observer IPs: 10.100.1.4 10.100.1.5 10.100.1.6
-#   - OBProxy endpoint: 127.0.0.1:2883
-#   - 90 tables x 500,000 rows
-#   - 300s per test, 120s warmup, thread ladder 20/50/100/200
+# CentOS OceanBase benchmark via OBProxy, aligned with nmysql_p test profile:
+#   - 90 tables x 500,000 rows (~10 GB+)
+#   - 300s per test case
+#   - 120s warmup (50 threads, read_only)
+#   - Workloads: oltp_read_only, oltp_write_only, oltp_read_write
+#   - Thread ladder: 20, 50, 100, 200
 #
 # Usage:
-#   ./run_oceanbase_benchmark_nmysql_pp.sh <cluster_label> <mysql_user> <mysql_password> <mysql_db> [mysql_host] [obproxy_port] [observer_ips]
+#   ./run_oceanbase_benchmark_nmysql_pp.sh <cluster_label> <mysql_host> \
+#       <mysql_user> <mysql_password> <mysql_db> [observer_ips] [obproxy_port]
 #
-# Example:
-#   ./run_oceanbase_benchmark_nmysql_pp.sh d8s_v5_centos_nmysql_pp \
-#     root@sbtest_tenant 'OceanBase#!123' sbtest 127.0.0.1 2883 \
-#     "10.100.1.4 10.100.1.5 10.100.1.6"
+# Example (CentOS control-node-co local OBProxy):
+#   ./run_oceanbase_benchmark_nmysql_pp.sh d8s_v5_centos_nmysql_pp 127.0.0.1 \
+#       root@sbtest_tenant 'OceanBase#!123' sbtest \
+#       "10.100.1.4 10.100.1.5 10.100.1.6" 2883
 ###############################################################################
 set -uo pipefail
 
-if [ "$#" -lt 4 ]; then
-  echo "Usage: $0 <cluster_label> <mysql_user> <mysql_password> <mysql_db> [mysql_host] [obproxy_port] [observer_ips]"
+if [ "$#" -lt 5 ]; then
+  echo "Usage: $0 <cluster_label> <mysql_host> <mysql_user> <mysql_password> <mysql_db> [observer_ips] [obproxy_port]"
   exit 1
 fi
 
-CLUSTER_LABEL="$1"
-MYSQL_USER="$2"
-MYSQL_PASSWORD="$3"
-MYSQL_DB="$4"
-MYSQL_HOST="${5:-127.0.0.1}"
-MYSQL_PORT="${6:-2883}"
-OBSERVER_IPS="${7:-10.100.1.4 10.100.1.5 10.100.1.6}"
+RUN_TS="$(date -u +%Y%m%dT%H%M%SZ)"
+CLUSTER_LABEL="${RUN_TS}_$1"
+MYSQL_HOST="$2"
+MYSQL_USER="$3"
+MYSQL_PASSWORD="$4"
+MYSQL_DB="$5"
+OBSERVER_IPS="${6:-10.100.1.4 10.100.1.5 10.100.1.6}"
+MYSQL_PORT="${7:-2883}"
 
 TABLE_SIZE="${TABLE_SIZE:-500000}"
 TABLES="${TABLES:-90}"
 RUN_TIME="${RUN_TIME:-300}"
 WARMUP_TIME="${WARMUP_TIME:-120}"
 WARMUP_THREADS="${WARMUP_THREADS:-50}"
-PREPARE_THREADS="${PREPARE_THREADS:-10}"
-PREPARE_RETRIES="${PREPARE_RETRIES:-3}"
+PREPARE_THREADS="${PREPARE_THREADS:-50}"
 REPORT_INTERVAL="${REPORT_INTERVAL:-5}"
 SLEEP_BETWEEN="${SLEEP_BETWEEN:-30}"
-HARD_RESET_DB="${HARD_RESET_DB:-1}"
 
 THREADS_LIST="${THREADS_LIST:-20 50 100 200}"
 WORKLOADS="${WORKLOADS:-oltp_read_only oltp_write_only oltp_read_write}"
@@ -49,9 +49,8 @@ SKIP_PREPARE="${SKIP_PREPARE:-0}"
 SKIP_WARMUP="${SKIP_WARMUP:-0}"
 
 OUTPUT_DIR="/tmp/oceanbase-bench"
-RUN_TS="$(date -u +%Y%m%dT%H%M%SZ)"
-CSV_FILE="${OUTPUT_DIR}/${RUN_TS}_${CLUSTER_LABEL}.csv"
-DEBUG_DIR="${OUTPUT_DIR}/${RUN_TS}_${CLUSTER_LABEL}_debug"
+CSV_FILE="${OUTPUT_DIR}/${CLUSTER_LABEL}.csv"
+DEBUG_DIR="${OUTPUT_DIR}/${CLUSTER_LABEL}_debug"
 mkdir -p "$OUTPUT_DIR" "$DEBUG_DIR"
 
 SSH_KEY="${SSH_KEY:-/home/azureadmin/.ssh/id_rsa}"
@@ -67,9 +66,8 @@ SYSBENCH_BASE="sysbench --db-driver=mysql \
   --table-size=${TABLE_SIZE} \
   --events=0 \
   --report-interval=${REPORT_INTERVAL} \
-  --db-ps-mode=auto \
-  --create_secondary=off \
-  --mysql-ignore-errors=all"
+  --db-ps-mode=disable \
+  --mysql-ignore-errors=4012,6002,6210,4000,1213,1205"
 
 collect_pre_metrics() {
   local snap_dir="$1"
@@ -145,6 +143,7 @@ compute_metrics() {
 
 parse_sysbench() {
   local result="$1"
+
   TPS=$(echo "$result" | awk -F'[()]' '/transactions:/ {gsub(/ per sec\./, "", $2); print $2}' | awk '{print $1}' | tail -1)
   P95=$(echo "$result" | awk '/95th percentile:/ {print $3}' | tail -1)
   AVG_LAT=$(echo "$result" | awk '/avg:/ {print $2}' | tail -1)
@@ -154,6 +153,7 @@ parse_sysbench() {
   fi
   TOTAL_Q=$(echo "${TOTAL_Q:-0}" | tr -d ',')
   ERRS=$(echo "$result" | awk -F': ' '/ignored errors:/ {print $2}' | awk '{print $1}' | tail -1)
+
   TPS=${TPS:-0}
   P95=${P95:-0}
   AVG_LAT=${AVG_LAT:-0}
@@ -162,11 +162,10 @@ parse_sysbench() {
 }
 
 echo "=========================================="
-echo " OceanBase Benchmark (CentOS v9.7 via OBProxy)"
+echo " OceanBase Benchmark (CentOS via OBProxy)"
 echo " Cluster:   ${CLUSTER_LABEL}"
 echo " Host:      ${MYSQL_HOST}:${MYSQL_PORT}"
 echo " User:      ${MYSQL_USER}"
-echo " Observers: ${OBSERVER_IPS}"
 echo " Tables:    ${TABLES} x ${TABLE_SIZE} rows"
 echo " Run:       ${RUN_TIME}s per case"
 echo " Warmup:    ${WARMUP_TIME}s (${WARMUP_THREADS} threads)"
@@ -189,28 +188,13 @@ if [ "$SKIP_PREPARE" = "1" ]; then
   echo "[1/4] Skipping data prepare (SKIP_PREPARE=1)."
 else
   echo "[1/4] Preparing test data (${TABLES} tables x ${TABLE_SIZE} rows)..."
-  prepared_ok=0
-  for attempt in $(seq 1 "$PREPARE_RETRIES"); do
-    echo "      Prepare attempt ${attempt}/${PREPARE_RETRIES}..."
-    if [ "$HARD_RESET_DB" = "1" ]; then
-      mysql -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" \
-        -e "DROP DATABASE IF EXISTS ${MYSQL_DB}; CREATE DATABASE ${MYSQL_DB};" >/dev/null 2>&1 || true
-    else
-      $SYSBENCH_BASE --threads="$PREPARE_THREADS" oltp_read_only cleanup >/dev/null 2>&1 || true
-    fi
-    if $SYSBENCH_BASE --threads="$PREPARE_THREADS" oltp_read_only prepare >/dev/null 2>&1; then
-      table_count=$(mysql -N -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" \
-        -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${MYSQL_DB}' AND table_name REGEXP '^sbtest[0-9]+$';" 2>/dev/null || echo 0)
-      if [ "${table_count:-0}" = "$TABLES" ]; then
-        prepared_ok=1
-        break
-      fi
-    fi
-    sleep 3
-  done
+  echo "      Cleaning up any existing tables first..."
+  $SYSBENCH_BASE --threads="$PREPARE_THREADS" oltp_read_only cleanup >/dev/null 2>&1 || true
 
-  if [ "$prepared_ok" -ne 1 ]; then
-    echo "ERROR: Data preparation failed after retries." >&2
+  echo "      Inserting data with ${PREPARE_THREADS} threads..."
+  $SYSBENCH_BASE --threads="$PREPARE_THREADS" oltp_read_only prepare
+  if [ $? -ne 0 ]; then
+    echo "ERROR: Data preparation failed!" >&2
     exit 1
   fi
   echo "      Data preparation complete."
@@ -219,7 +203,7 @@ fi
 if [ "$SKIP_WARMUP" = "1" ]; then
   echo "[2/4] Skipping warmup (SKIP_WARMUP=1)."
 else
-  echo "[2/4] Running warmup (${WARMUP_THREADS} threads, ${WARMUP_TIME}s)..."
+  echo "[2/4] Running warmup (${WARMUP_THREADS} threads, ${WARMUP_TIME}s, discarded)..."
   $SYSBENCH_BASE --threads="$WARMUP_THREADS" --time="$WARMUP_TIME" oltp_read_only run >/dev/null 2>&1 || true
   echo "      Warmup complete."
 fi
@@ -227,7 +211,12 @@ fi
 echo "timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors,exit_code,status,cpu_usage_pct,memory_usage_pct,disk_io_mbps" > "$CSV_FILE"
 
 for workload in $WORKLOADS; do
-  echo "[3/4] Running workload: ${workload}"
+  case "$workload" in
+    oltp_read_only)  echo "[3/4] Running Read-Only gradient stress test..." ;;
+    oltp_write_only) echo "[4/4] Running Write-Only gradient stress test..." ;;
+    *)               echo "[4/4] Running Read-Write gradient stress test..." ;;
+  esac
+
   for threads in $THREADS_LIST; do
     echo "  -> ${workload} threads=${threads} (${RUN_TIME}s)..."
     now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -238,6 +227,7 @@ for workload in $WORKLOADS; do
     result_file=$(mktemp)
     $SYSBENCH_BASE --threads="$threads" --time="$RUN_TIME" "$workload" run >"$result_file" 2>&1
     rc=$?
+
     result="$(cat "$result_file")"
 
     collect_post_metrics "$snap_dir"
@@ -259,6 +249,7 @@ for workload in $WORKLOADS; do
       cp "$result_file" "$dbg_file"
       echo "     Debug log saved: $dbg_file"
     fi
+
     rm -f "$result_file"
 
     echo "${now},${CLUSTER_LABEL},${workload},${threads},${TPS},${P95},${AVG_LAT},${TOTAL_Q},${ERRS},${rc},${status},${METRIC_CPU},${METRIC_MEM},${METRIC_DISK}" >> "$CSV_FILE"
@@ -268,7 +259,9 @@ for workload in $WORKLOADS; do
   done
 done
 
-echo "[4/4] Benchmark complete."
-echo "CSV: ${CSV_FILE}"
-echo "Debug dir: ${DEBUG_DIR}"
+echo "=========================================="
+echo " Benchmark complete!"
+echo " CSV: ${CSV_FILE}"
+echo " Debug dir: ${DEBUG_DIR}"
+echo "=========================================="
 cat "$CSV_FILE"
