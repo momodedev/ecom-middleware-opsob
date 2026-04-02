@@ -301,12 +301,19 @@ parse_sysbench() {
   TOTAL_Q=$(echo "${TOTAL_Q:-0}" | tr -d ',')
   ERRS=$(echo "$result" | awk -F': ' '/ignored errors:/ {print $2}' | awk '{print $1}' | tail -1)
 
-  # Fallback for failed runs where only interval lines are present.
+  # Fallback for failed/partial runs where only interval lines are present.
   if [ -z "${TPS:-}" ]; then
-    TPS=$(echo "$result" | awk 'match($0, /tps:[[:space:]]*([0-9.]+)/, m) {v=m[1]} END {if(v!="") print v}')
+    TPS=$(echo "$result" | grep -Eo 'tps:[[:space:]]*[0-9]+(\.[0-9]+)?' | sed -E 's/.*tps:[[:space:]]*//' | tail -1)
   fi
   if [ -z "${P95:-}" ]; then
-    P95=$(echo "$result" | awk 'match($0, /lat \(ms,95%\):[[:space:]]*([0-9.]+)/, m) {v=m[1]} END {if(v!="") print v}')
+    P95=$(echo "$result" | grep -Eo 'lat \(ms,95%\):[[:space:]]*[0-9]+(\.[0-9]+)?' | sed -E 's/.*lat \(ms,95%\):[[:space:]]*//' | tail -1)
+  fi
+  if [ -z "${AVG_LAT:-}" ]; then
+    AVG_LAT=$(echo "$result" | grep -Eo 'avg:[[:space:]]*[0-9]+(\.[0-9]+)?' | sed -E 's/.*avg:[[:space:]]*//' | tail -1)
+  fi
+  # If no explicit avg latency exists in partial output, keep field informative.
+  if [ -z "${AVG_LAT:-}" ] && [ -n "${P95:-}" ]; then
+    AVG_LAT="$P95"
   fi
 
   TPS=${TPS:-0}; P95=${P95:-0}; AVG_LAT=${AVG_LAT:-0}; TOTAL_Q=${TOTAL_Q:-0}; ERRS=${ERRS:-0}
