@@ -41,6 +41,7 @@ PREPARE_THREADS="${PREPARE_THREADS:-10}"
 PREPARE_RETRIES="${PREPARE_RETRIES:-3}"
 REPORT_INTERVAL="${REPORT_INTERVAL:-5}"
 SLEEP_BETWEEN="${SLEEP_BETWEEN:-30}"
+HARD_RESET_DB="${HARD_RESET_DB:-1}"
 
 THREADS_LIST="${THREADS_LIST:-20 50 100 200}"
 WORKLOADS="${WORKLOADS:-oltp_read_only oltp_write_only oltp_read_write}"
@@ -191,7 +192,12 @@ else
   prepared_ok=0
   for attempt in $(seq 1 "$PREPARE_RETRIES"); do
     echo "      Prepare attempt ${attempt}/${PREPARE_RETRIES}..."
-    $SYSBENCH_BASE --threads="$PREPARE_THREADS" oltp_read_only cleanup >/dev/null 2>&1 || true
+    if [ "$HARD_RESET_DB" = "1" ]; then
+      mysql -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" \
+        -e "DROP DATABASE IF EXISTS ${MYSQL_DB}; CREATE DATABASE ${MYSQL_DB};" >/dev/null 2>&1 || true
+    else
+      $SYSBENCH_BASE --threads="$PREPARE_THREADS" oltp_read_only cleanup >/dev/null 2>&1 || true
+    fi
     if $SYSBENCH_BASE --threads="$PREPARE_THREADS" oltp_read_only prepare >/dev/null 2>&1; then
       table_count=$(mysql -N -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" \
         -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${MYSQL_DB}' AND table_name REGEXP '^sbtest[0-9]+$';" 2>/dev/null || echo 0)
