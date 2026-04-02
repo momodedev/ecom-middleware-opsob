@@ -1,0 +1,511 @@
+==========================================
+ OceanBase Benchmark (nmysql spec via OBProxy)
+ Label:   20260401T153623Z_d8s_v5_centos_nmysql_p_loop16_iter01
+ Host:    127.0.0.1:2883
+ Tables:  90 × 500000 rows
+ Run:     300s per case
+ Warmup:  120s (50 threads)
+ Threads: 20 50 100 200
+ Workloads: oltp_read_only oltp_read_write
+==========================================
+[0/4] Ensuring database 'sbtest' exists...
+[1/4] Preparing test data (90 tables × 500000 rows, ~10 GB+)...
+      Cleaning up any existing tables first...
+sysbench 1.0.20 (using system LuaJIT 2.1.0-beta3)
+
+Dropping table 'sbtest1'...
+Dropping table 'sbtest2'...
+Dropping table 'sbtest3'...
+FATAL: mysql_drv_query() returned error 2013 (Lost connection to server during query) for query 'DROP TABLE IF EXISTS sbtest3'
+FATAL: `cleanup' function failed: /usr/share/sysbench/oltp_common.lua:392: SQL error, errno = 2013, state = 'HY000': Lost connection to server during query
+      Inserting data with 50 threads...
+sysbench 1.0.20 (using system LuaJIT 2.1.0-beta3)
+
+Initializing worker threads...
+
+Creating table 'sbtest22'...
+Creating table 'sbtest13'...
+Creating table 'sbtest40'...
+Creating table 'sbtest15'...
+Creating table 'sbtest4'...
+Creating table 'sbtest9'...
+Creating table 'sbtest1'...
+Creating table 'sbtest10'...
+Creating table 'sbtest5'...
+Creating table 'sbtest30'...
+Creating table 'sbtest17'...
+Creating table 'sbtest31'...
+Creating table 'sbtest14'...
+Creating table 'sbtest45'...
+Creating table 'sbtest44'...
+Creating table 'sbtest2'...
+Creating table 'sbtest3'...
+Creating table 'sbtest39'...
+Creating table 'sbtest33'...
+Creating table 'sbtest42'...
+Creating table 'sbtest24'...
+Creating table 'sbtest16'...
+Creating table 'sbtest12'...
+Creating table 'sbtest29'...
+Creating table 'sbtest32'...
+Creating table 'sbtest37'...
+Creating table 'sbtest46'...
+Creating table 'sbtest34'...
+Creating table 'sbtest25'...
+Creating table 'sbtest41'...
+Creating table 'sbtest11'...
+Creating table 'sbtest35'...
+Creating table 'sbtest27'...
+Creating table 'sbtest21'...
+Creating table 'sbtest26'...
+Creating table 'sbtest28'...
+Creating table 'sbtest43'...
+Creating table 'sbtest49'...
+Creating table 'sbtest36'...
+Creating table 'sbtest47'...
+Creating table 'sbtest38'...
+Creating table 'sbtest18'...
+Creating table 'sbtest50'...
+Creating table 'sbtest7'...
+Creating table 'sbtest20'...
+Creating table 'sbtest23'...
+Creating table 'sbtest6'...
+Creating table 'sbtest48'...
+Creating table 'sbtest19'...
+Creating table 'sbtest8'...
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest13' already exists) for query 'CREATE TABLE sbtest13(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest13' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest15' already exists) for query 'CREATE TABLE sbtest15(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest15' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest10' already exists) for query 'CREATE TABLE sbtest10(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest10' already exists
+FATAL: mysql_drv_query() returned error 2013 (Lost connection to server during query) for query 'CREATE TABLE sbtest19(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 2013, state = 'HY000': Lost connection to server during query
+FATAL: mysql_drv_query() returned error 2013 (Lost connection to server during query) for query 'CREATE TABLE sbtest28(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 2013, state = 'HY000': Lost connection to server during query
+FATAL: mysql_drv_query() returned error 2013 (Lost connection to server during query) for query 'CREATE TABLE sbtest11(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 2013, state = 'HY000': Lost connection to server during query
+FATAL: mysql_drv_query() returned error 2013 (Lost connection to server during query) for query 'CREATE TABLE sbtest39(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 2013, state = 'HY000': Lost connection to server during query
+FATAL: mysql_drv_query() returned error 2013 (Lost connection to server during query) for query 'CREATE TABLE sbtest23(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 2013, state = 'HY000': Lost connection to server during query
+FATAL: mysql_drv_query() returned error 2013 (Lost connection to server during query) for query 'CREATE TABLE sbtest3(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 2013, state = 'HY000': Lost connection to server during query
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest45' already exists) for query 'CREATE TABLE sbtest45(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest45' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest31' already exists) for query 'CREATE TABLE sbtest31(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest31' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest5' already exists) for query 'CREATE TABLE sbtest5(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest5' already exists
+FATAL: mysql_drv_query() returned error 2013 (Lost connection to server during query) for query 'CREATE TABLE sbtest35(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 2013, state = 'HY000': Lost connection to server during query
+FATAL: mysql_drv_query() returned error 2013 (Lost connection to server during query) for query 'CREATE TABLE sbtest43(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 2013, state = 'HY000': Lost connection to server during query
+FATAL: mysql_drv_query() returned error 2013 (Lost connection to server during query) for query 'CREATE TABLE sbtest2(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 2013, state = 'HY000': Lost connection to server during query
+FATAL: mysql_drv_query() returned error 2013 (Lost connection to server during query) for query 'CREATE TABLE sbtest14(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 2013, state = 'HY000': Lost connection to server during query
+FATAL: mysql_drv_query() returned error 2013 (Lost connection to server during query) for query 'CREATE TABLE sbtest4(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 2013, state = 'HY000': Lost connection to server during query
+FATAL: mysql_drv_query() returned error 2013 (Lost connection to server during query) for query 'CREATE TABLE sbtest44(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 2013, state = 'HY000': Lost connection to server during query
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest16' already exists) for query 'CREATE TABLE sbtest16(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest16' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest24' already exists) for query 'CREATE TABLE sbtest24(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest24' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest46' already exists) for query 'CREATE TABLE sbtest46(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest46' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest42' already exists) for query 'CREATE TABLE sbtest42(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest42' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest32' already exists) for query 'CREATE TABLE sbtest32(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest32' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest41' already exists) for query 'CREATE TABLE sbtest41(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest41' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest21' already exists) for query 'CREATE TABLE sbtest21(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest21' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest26' already exists) for query 'CREATE TABLE sbtest26(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest26' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest22' already exists) for query 'CREATE TABLE sbtest22(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest22' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest40' already exists) for query 'CREATE TABLE sbtest40(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest40' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest34' already exists) for query 'CREATE TABLE sbtest34(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest34' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest37' already exists) for query 'CREATE TABLE sbtest37(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest37' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest27' already exists) for query 'CREATE TABLE sbtest27(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest27' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest9' already exists) for query 'CREATE TABLE sbtest9(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest9' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest29' already exists) for query 'CREATE TABLE sbtest29(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest29' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest36' already exists) for query 'CREATE TABLE sbtest36(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest36' already exists
+Inserting 500000 records into 'sbtest1'
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest12' already exists) for query 'CREATE TABLE sbtest12(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest12' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest33' already exists) for query 'CREATE TABLE sbtest33(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest33' already exists
+FATAL: mysql_drv_query() returned error 2013 (Lost connection to server during query) for query 'CREATE TABLE sbtest30(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 2013, state = 'HY000': Lost connection to server during query
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest25' already exists) for query 'CREATE TABLE sbtest25(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest25' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest18' already exists) for query 'CREATE TABLE sbtest18(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest18' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest49' already exists) for query 'CREATE TABLE sbtest49(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest49' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest7' already exists) for query 'CREATE TABLE sbtest7(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest7' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest50' already exists) for query 'CREATE TABLE sbtest50(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest50' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest38' already exists) for query 'CREATE TABLE sbtest38(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest38' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest48' already exists) for query 'CREATE TABLE sbtest48(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest48' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest17' already exists) for query 'CREATE TABLE sbtest17(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest17' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest47' already exists) for query 'CREATE TABLE sbtest47(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest47' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest20' already exists) for query 'CREATE TABLE sbtest20(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest20' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest6' already exists) for query 'CREATE TABLE sbtest6(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest6' already exists
+FATAL: mysql_drv_query() returned error 1050 (Table 'sbtest8' already exists) for query 'CREATE TABLE sbtest8(
+  id INTEGER NOT NULL AUTO_INCREMENT,
+  k INTEGER DEFAULT '0' NOT NULL,
+  c CHAR(120) DEFAULT '' NOT NULL,
+  pad CHAR(60) DEFAULT '' NOT NULL,
+  PRIMARY KEY (id)
+) /*! ENGINE = innodb */ '
+FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:197: SQL error, errno = 1050, state = '42S01': Table 'sbtest8' already exists
+FATAL: mysql_drv_query() returned error 2013 (Lost connection to server during query) for query 'INSERT INTO sbtest1(k, c, pad) VALUES(251478, '93827056544-42471575201-91873715232-11281809819-88829316470-62574132721-19195762715-43552047870-67597044423-10074509586', '75391250901-09001760820-27351353064-03393842518-80111141175'),(250710, '88062923655-25957434058-28786306081-24239346978-78745075689-87251140042-37064471428-64023603970-06986412394-47978493800', '05472777985-47907532359-49605052832-65831465246-66628238129'),(196906, '50342148779-92375006303-03168603267-20087125979-65259088730-41033647935-91371024213-29862133750-91704902509-56978944223', '89267915486-94281384042-83719092190-54730551200-01189717167'),(251052, '88721353480-57490938788-48742242674-81718879563-24090128028-63646555615-11183620004-46186875898-17391955688-06387863806', '78674658963-61376072964-16680331841-42405147049-09555122986'),(249874, '17994768785-77179911635-96754806918-95986962815-37434273886-33570731491-61566658781-18026715645-11115148015-48108119578', '59245875621-05232094807-95494154133-82967144082-95468133659'),(250692, '73885180541-99937572702-55111543934-46968596960-97013108578-56987048008-77102461131-65430272056-80886754945-99147469007', '72084311745-00006333080-43024304340-30159248104-41241023716'),(327046, '31932436754-61513844224-21394772575-23282739393-41247006992-42254458946-20240042467-78009817805-66389564240-21430943024', '37312039587-97528601959-56245637317-62695079541-95687717202'),(252131, '34719097257-20317586051-45768324140-90039243129-99796942411-19467963844-70765636576-19128256870-49615246772-65435621201', '68559416978-72312179968-97012685027-51346967920-84380863539'),(249241, '24931343123-13961814224-67780122485-93823812257-41482815572-13939367554-35462852298-17390053229-73927688411-69405171164', '52671719802-22221102973-96845431426-23249856637-90597551349'),(249705, '39630666727-23107636358-08293615759-63059045155-67857004779-52879856333-82494617754-26460890910-05550301499-62901378663', '37198687351-17796533126-66213620933-38660393287-04914044291'),(250533, '04633283573-53344369982-46175022427-29805212244-45021493131-59445792039-47343934768-81166847690-54452499540-84613665319', '87481600287-84871352306-72399897481-02647818937-12922720639'),(236042, '22927320659-10477755898-19162666715-26204096344-69511333443-54668082435-32211255257-22220671143-91833527031-68796005952', '36700250493-51190503656-51882634532-68477698959-51465603172'),(249581, '23054494057-64958338400-96741840194-96194677068-93402346591-63415738180-43472920273-39129037763-99112013433-08170434339', '11761645518-82870556516-84235870332-71268356387-03942258743'),(251978, '31244057420-80330428078-43662550548-16663970546-24245835222-47611302044-55041222611-85596153445-42052771825-69109513775', '99460126939-63773423657-03754534813-73820930187-00157774873'),(252464, '89716878970-32834578622-95724402017-60855475318-44469450022-69652886365-46718999567-12773112616-88250371146-62983507334', '21553558564-24251088300-94407880369-15768663728-22188184915'),(251287, '26073913240-83298013874-01134165540-94550767936-18229242600-92468102313-12567598534-43308252512-66675226377-35686806582', '52338302930-80977070672-70429782578-64160175348-49157468969'),(250255, '01365911842-79160707573-21538758811-87515004217-01635234714-72529207381-15956653007-99557250920-40490757884-81271022433', '87678979510-33693670606-94234489901-32939546038-14622743507'),(248806, '50203427044-15127205655-77687243273-12714176769-61503347095-27803495477-76842753561-02987358305-81871119646-62846181548', '14474972601-15260655077-76352204095-31345886149-95561824899'),(249017, '90052244622-76064299567-63714187439-63911360786-59364713321-25141587051-28661203627-76044300419-88129318261-70115199060', '50886939045-24083060695-96239980081-93212021970-97331115707'),(226851, '42507720667-71069094875-80563986626-77027354797-39898184369-46918293427-13295985181-38462721203-39628870593-63856399881', '34906430829-55186460670-90360522601-88506323801-19665456361'),(265145, '27264457656-59320626619-71624939980-21043925486-8377387655FATAL: `sysbench.cmdline.call_command' function failed: /usr/share/sysbench/oltp_common.lua:230: db_bulk_insert_next() failed
+      Data preparation complete.
+[2/4] Running buffer pool warmup (50 threads, 120s, results discarded)...
+      Warmup complete.
+[3/4] Running Read-Only gradient stress test...
+  -> oltp_read_only threads=20 (300s)...
+     FAILED (rc=1)
+     Sleeping 30s...
+  -> oltp_read_only threads=50 (300s)...
+     FAILED (rc=1)
+     Sleeping 30s...
+  -> oltp_read_only threads=100 (300s)...
+     FAILED (rc=1)
+     Sleeping 30s...
+  -> oltp_read_only threads=200 (300s)...
+     FAILED (rc=1)
+     Sleeping 30s...
+[4/4] Running Read-Write gradient stress test...
+  -> oltp_read_write threads=20 (300s)...
+     FAILED (rc=1)
+     Sleeping 30s...
+  -> oltp_read_write threads=50 (300s)...
+     FAILED (rc=1)
+     Sleeping 30s...
+  -> oltp_read_write threads=100 (300s)...
+     FAILED (rc=1)
+     Sleeping 30s...
+  -> oltp_read_write threads=200 (300s)...
+     FAILED (rc=1)
+     Sleeping 30s...
+==========================================
+ Benchmark complete!
+ CSV: /tmp/oceanbase-bench/20260401T153623Z_d8s_v5_centos_nmysql_p_loop16_iter01.csv
+==========================================
+timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors,exit_code,status,cpu_usage_pct,memory_usage_pct,disk_io_mbps,prom_host_load1,prom_host_cpu_pct,prom_host_mem_used_bytes,prom_host_mem_pct,prom_host_iops,prom_host_io_time_us,prom_host_io_throughput_bytes_per_s,prom_host_net_throughput_bytes_per_s,prom_ob_server_num,prom_ob_active_sessions,prom_ob_all_sessions,prom_ob_cpu_assigned_pct,prom_ob_mem_assigned_pct,prom_ob_disk_total_bytes,prom_ob_disk_free_bytes,prom_ob_plan_cache_hit_pct,prom_ob_query_p95_ms,prom_ob_wait_events,prom_tenant_cpu_total,prom_tenant_mem_total_bytes,prom_tenant_disk_data_bytes,prom_tenant_disk_log_bytes,prom_ob_qps_delete,prom_ob_qps_insert,prom_ob_qps_other,prom_ob_resp_delete_us,prom_ob_resp_insert_us,prom_ob_resp_other_us,prom_ob_tps_commit,prom_ob_tps_rollback,prom_ob_trans_resp_commit_us,prom_ob_trans_resp_rollback_us,prom_ob_trans_resp_all_us,prom_ob_trans_rollback_ratio_pct,prom_ob_request_wait_events,prom_ob_request_wait_time_us,prom_ob_request_wait_queue_ratio_pct,prom_ob_trans_log_count,prom_ob_trans_log_volume_bytes,prom_ob_trans_log_time_us,prom_ob_iops_read,prom_ob_iops_write,prom_ob_io_time_read_us,prom_ob_io_time_write_us,prom_ob_io_throughput_read_bytes,prom_ob_io_throughput_write_bytes,prom_ob_trans_count_local,prom_ob_trans_count_distributed,prom_ob_memstore_limit_mb,prom_ob_memstore_total_mb,prom_ob_memstore_trigger_mb,prom_ob_memstore_active_mb,prom_ob_bloom_cache_size_mb,prom_ob_clog_cache_size_mb,prom_ob_bloom_cache_hit_pct,prom_ob_clog_cache_hit_pct,prom_ob_bloom_cache_req_total,prom_ob_clog_cache_req_total,prom_ob_log_disk_bytes,prom_ob_log_disk_pct,prom_ob_vector_memory_bytes,prom_ob_vector_memory_pct,prom_ob_sql_plan_local,prom_ob_sql_plan_remote,prom_ob_sql_plan_distributed,prom_ob_sql_plan_time_us,prom_ob_wait_events_other,prom_ob_wait_time_other_us,prom_ob_tenant_cpu_cost_pct,prom_ob_tenant_thread_usage_pct,prom_ob_tenant_mem_usage_pct,prom_ob_memstore_usage_pct,prom_ob_rpc_package_rt_us,prom_ob_rpc_package_in_bytes,prom_ob_rpc_package_out_bytes,prom_ob_open_cursors,prom_ob_rpc_deliver_success_ratio_pct,prom_ob_gts_request_count,prom_ob_rpc_packet_net_delay_us,prom_ob_rpc_deliver_fail_count,prom_ob_lock_wait_count_success,prom_ob_lock_wait_count_fail,prom_ob_lock_wait_avg_us,prom_ob_memstore_lock_read_succ_ratio_pct,prom_ob_memstore_lock_write_succ_ratio_pct
+2026-04-01T15:36:26Z,20260401T153623Z_d8s_v5_centos_nmysql_p_loop16_iter01,oltp_read_only,20,0,0,0,0,0,1,failed,15.5,86.9,0.00,0.606667,7.912880,0,0,43.130864,28666.666667,250948.266667,419184.162963,3.000000,3.500000,13.000000,1.000000,1.000000,214748364800.000000,209585875626.666656,99.912709,9.168821,2469.333333,8.000000,24696061952.000000,2534967296.000000,71109721655.500000,0.000000,0.000000,0.511111,0.000000,0.000000,165.434783,12.866667,0.000000,1290.920553,0.000000,1290.920553,0.000000,523.133333,12015.400000,50.002124,8.044444,4408.422222,17121.066667,3.000000,1669.200000,2249.711111,250647.555556,12288.000000,1373359.111111,7.711111,0.000000,32870.399923,3272.000000,7272.910114,5014.000000,27.777344,0.000000,0.000000,0.000000,3.044444,0.000000,426658329933.000000,66.226089,62497685504.000000,88.999244,3.466667,3.777778,0.333333,0,2469.333333,613477.777778,14.916667,100.000000,88.999244,9.954245,222288.866667,563010.977778,475188.155556,0.000000,100.000000,0,140.800000,0.000000,22.622222,0.000000,227524311111111.062500,100.000000,100.000000
+2026-04-01T15:36:58Z,20260401T153623Z_d8s_v5_centos_nmysql_p_loop16_iter01,oltp_read_only,50,0,0,0,0,0,1,failed,6.1,86.9,0.00,0.713333,8.039696,0,0,63.054321,44711.111111,559988.938272,1111697.274074,3.000000,2.833333,13.666667,1.000000,1.000000,214748364800.000000,209702617088.000000,94.836721,9.601363,3148.133333,8.000000,24696061952.000000,2534967296.000000,71120414355.166672,0.000000,0.622222,7.022222,0.000000,16325.964286,38447.613924,19.177778,1.422222,1794.552723,0.000000,1670.656958,6.903991,658.555556,22652.288889,50.000000,17.511111,464404.600000,46818.666667,76.577778,2383.733333,60835.755556,311192.155556,231602.644444,3746331.222222,13.577778,0.133333,32870.399923,3398.000000,7272.110134,5140.000000,27.777344,0.000000,0.000000,93.323217,31.844444,14.644444,426722486131.000000,66.236047,62644486144.000000,89.208294,24.133333,8.088889,0.355556,0,3148.133333,1364613.333333,14.708333,100.000000,89.208294,10.337568,281967.511111,1791686.066667,1717613.866667,0.000000,100.000000,0,166.333333,0.000000,1712.933333,0.022222,51258192.000000,100.000000,99.998700
+2026-04-01T15:37:30Z,20260401T153623Z_d8s_v5_centos_nmysql_p_loop16_iter01,oltp_read_only,100,0,0,0,0,0,1,failed,22.2,86.9,0.01,0.613333,8.251507,0,0,57.207407,44496.296296,440557.669136,443661.619753,3.000000,3.666667,13.666667,1.000000,1.000000,214748364800.000000,209701918037.333344,99.121622,9.418518,2657.022222,8.000000,24696061952.000000,2475186176.000000,71120802662.500000,0.000000,0.000000,0.555556,0.000000,0.000000,156.560000,14.155556,0.000000,1387.356358,0.000000,1387.356358,0.000000,541.288889,13055.777778,49.995895,8.422222,5990.555556,17940.955556,80.622222,2052.600000,57327.177778,270956.133333,141137.133333,2119815.155556,8.711111,0.000000,32870.399923,3398.000000,7271.710125,5140.000000,27.777344,0.000000,0.000000,0.000000,7.777778,0.000000,426724815975.000000,66.236409,62648680448.000000,89.214267,3.955556,3.800000,0.377778,0,2657.022222,717495.555556,14.625000,100.000000,89.214267,10.337568,233448.688889,601624.288889,520928.311111,0.000000,100.000000,0,149.644444,0.000000,28.777778,0.000000,267155555555.555481,100.000000,100.000000
+2026-04-01T15:38:02Z,20260401T153623Z_d8s_v5_centos_nmysql_p_loop16_iter01,oltp_read_only,200,0,0,0,0,0,1,failed,20.8,86.9,0.02,0.660000,8.305258,0,0,47.686420,32350.617284,325970.804938,521713.886420,3.000000,2.833333,14.666667,1.000000,1.000000,214748364800.000000,209701918037.333344,95.200095,9.594144,2738.888889,8.000000,24696061952.000000,2475186176.000000,71121073108.000000,0.000000,0.000000,6.200000,0.000000,0.000000,259.010753,15.622222,0.266667,1229.697013,0.000000,1209.058741,1.678322,600.955556,41588.555556,49.996302,8.066667,4103.533333,17789.022222,39.622222,1784.844444,32761.022222,242878.688889,94667.866667,1452255.644444,8.355556,0.000000,32870.399923,3398.000000,7273.710133,5140.000000,27.777344,0.000000,0.000000,97.651007,16.422222,13.244444,426726438648.000000,66.236661,62692720640.000000,89.276982,29.133333,9.111111,0.333333,0,2738.888889,879548.888889,15.041667,100.000000,89.276982,10.337568,274473.622222,664877.911111,590857.222222,0.000000,100.000000,0,151.355556,0.000000,21.577778,0.000000,103943799999999.984375,100.000000,100.000000
+2026-04-01T15:38:34Z,20260401T153623Z_d8s_v5_centos_nmysql_p_loop16_iter01,oltp_read_write,20,0,0,0,0,0,1,failed,30.2,86.8,0.00,0.476667,8.254400,0,0,44.239506,29259.259259,305066.034568,590243.832099,3.000000,3.333333,17.500000,1.000000,1.000000,214748364800.000000,209701918037.333344,96.031161,0.000000,2765.977778,8.000000,24696061952.000000,2475186176.000000,71121365318.000000,0.000000,0.000000,11.200000,0.000000,0.000000,383.103175,16.844444,0.733333,1070.286280,0.000000,1025.634640,4.171934,643.866667,148653.977778,49.989648,7.755556,3892.311111,16944.155556,8.866667,1853.111111,12424.755556,241082.822222,87893.000000,1487936.711111,8.044444,0.000000,32870.399923,3398.000000,7272.910133,5140.000000,27.777344,0.000000,0.000000,99.503106,27.844444,17.888889,426728191908.000000,66.236933,62719983616.000000,89.315805,51.000000,13.511111,0.377778,0,2765.977778,965515.555556,15.083333,100.000000,89.315805,10.337568,305737.733333,705225.822222,628701.755556,0.000000,100.000000,0,149.644444,0.000000,20.755556,0.000000,103477044444444.421875,100.000000,100.000000
+2026-04-01T15:39:06Z,20260401T153623Z_d8s_v5_centos_nmysql_p_loop16_iter01,oltp_read_write,50,0,0,0,0,0,1,failed,20.1,86.8,0.00,0.540000,8.216066,0,0,44.162963,29523.456790,304347.970370,454701.456790,3.000000,3.333333,18.166667,1.000000,1.000000,214748364800.000000,209699121834.666656,97.821254,9.806318,2589.511111,8.000000,24696061952.000000,2475186176.000000,71121705272.500000,0.422222,0.422222,2.488889,6658.734196,2604.052632,191.419643,13.088889,0.044444,1717.631579,0.000000,1711.818951,0.338409,554.555556,15568.866667,50.000000,10.622222,5019.688889,30333.155556,36.466667,1704.200000,26252.533333,247505.422222,88925.088889,1472138.466667,7.644444,0.364118,32870.399923,3408.000000,7272.910114,5150.000000,27.777344,0.000000,0.000000,100.000000,7.000000,7.000000,426730231635.000000,66.237250,62764023808.000000,89.378520,11.333333,6.044444,0.444444,0,2589.511111,715357.777778,14.958333,100.000000,89.378520,10.367991,262567.155556,596557.733333,516640.177778,0.000000,100.000000,0,152.888889,0.000000,22.600000,0.000000,384266666666.666565,100.000000,100.000000
+2026-04-01T15:39:38Z,20260401T153623Z_d8s_v5_centos_nmysql_p_loop16_iter01,oltp_read_write,100,0,0,0,0,0,1,failed,32.0,86.8,0.01,0.463333,8.476565,0,0,52.269136,35234.567901,345884.444444,528163.777778,3.000000,3.833333,18.000000,1.000000,1.000000,214748364800.000000,209703316138.666656,95.747912,0.000000,2629.222222,8.000000,24696061952.000000,2475517269.333333,71122105254.333328,1.155556,1.155556,4.711111,6982.153846,3527.442308,198.146226,14.311111,0.155556,2091.631988,0.000000,2069.141321,1.075269,601.577778,21495.133333,49.991690,14.933333,6837.155556,49646.822222,99.888889,1769.755556,68912.844444,258043.933333,125351.844444,1541138.355556,8.444444,0.974960,32870.399923,3414.000000,7271.110111,5156.000000,27.777344,0.000000,0.000000,100.000000,13.177778,14.711111,426732631526.000000,66.237622,62780801024.000000,89.402412,22.711111,9.911111,0.355556,0,2629.222222,854424.444444,14.875000,100.000000,89.402412,10.386244,288352.577778,637859.733333,574728.088889,0.000000,100.000000,0,152.844444,0.000000,25.666667,0.000000,414577777777.777649,100.000000,100.000000
+2026-04-01T15:40:11Z,20260401T153623Z_d8s_v5_centos_nmysql_p_loop16_iter01,oltp_read_write,200,0,0,0,0,0,1,failed,25.9,86.8,0.01,0.583333,8.319333,0,0,47.674074,32007.407407,313308.602469,556868.646914,3.000000,3.500000,18.166667,1.000000,1.000000,214748364800.000000,209703316138.666656,93.928646,9.857879,2809.688889,8.000000,24696061952.000000,2475517269.333333,71122503574.000000,2.666667,2.622222,8.244444,7024.058333,4852.762712,265.986523,14.377778,0.333333,3416.701700,0.000000,3339.283988,2.265861,654.200000,50215.088889,49.998302,21.422222,9104.066667,98209.000000,35.800000,1803.466667,26390.444444,258912.111111,54049.666667,1484438.355556,7.177778,2.288889,32870.399923,3416.000000,7270.310112,5158.000000,27.777344,0.000000,0.000000,100.000000,24.222222,25.911111,426735021444.000000,66.237993,62856298496.000000,89.509923,43.866667,17.333333,0.355556,0,2809.688889,980648.888889,15.041667,100.000000,89.509923,10.392329,313920.311111,704952.644444,635277.311111,0.000000,100.000000,0,153.511111,0.000000,28.000000,0.000000,77158911111111.093750,100.000000,100.000000

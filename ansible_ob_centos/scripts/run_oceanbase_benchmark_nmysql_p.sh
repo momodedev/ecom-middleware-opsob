@@ -38,10 +38,13 @@ TABLE_SIZE=500000
 TABLES=90
 RUN_TIME=300
 WARMUP_TIME=120
-WARMUP_THREADS=50
-PREPARE_THREADS=50
+WARMUP_THREADS=20
+PREPARE_THREADS=5
 REPORT_INTERVAL=5
 SLEEP_BETWEEN=30
+PREPARE_DBPS_MODE="auto"
+RUN_DBPS_MODE="disable"
+CREATE_SECONDARY="off"
 
 THREADS_LIST="20 50 100 200"
 WORKLOADS="oltp_read_only oltp_read_write"
@@ -63,8 +66,10 @@ SYSBENCH_BASE="sysbench --db-driver=mysql \
   --tables=${TABLES} \
   --table-size=${TABLE_SIZE} \
   --events=0 \
-  --report-interval=${REPORT_INTERVAL} \
-  --db-ps-mode=disable"
+  --report-interval=${REPORT_INTERVAL}"
+
+SYSBENCH_PREPARE_BASE="${SYSBENCH_BASE} --db-ps-mode=${PREPARE_DBPS_MODE} --create_secondary=${CREATE_SECONDARY}"
+SYSBENCH_RUN_BASE="${SYSBENCH_BASE} --db-ps-mode=${RUN_DBPS_MODE}"
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -296,6 +301,14 @@ parse_sysbench() {
   TOTAL_Q=$(echo "${TOTAL_Q:-0}" | tr -d ',')
   ERRS=$(echo "$result" | awk -F': ' '/ignored errors:/ {print $2}' | awk '{print $1}' | tail -1)
 
+  # Fallback for failed runs where only interval lines are present.
+  if [ -z "${TPS:-}" ]; then
+    TPS=$(echo "$result" | awk 'match($0, /tps:[[:space:]]*([0-9.]+)/, m) {v=m[1]} END {if(v!="") print v}')
+  fi
+  if [ -z "${P95:-}" ]; then
+    P95=$(echo "$result" | awk 'match($0, /lat \(ms,95%\):[[:space:]]*([0-9.]+)/, m) {v=m[1]} END {if(v!="") print v}')
+  fi
+
   TPS=${TPS:-0}; P95=${P95:-0}; AVG_LAT=${AVG_LAT:-0}; TOTAL_Q=${TOTAL_Q:-0}; ERRS=${ERRS:-0}
 }
 
@@ -321,10 +334,10 @@ mysql -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" \
 # Step 1: Prepare data
 echo "[1/4] Preparing test data (${TABLES} tables × ${TABLE_SIZE} rows, ~10 GB+)..."
 echo "      Cleaning up any existing tables first..."
-$SYSBENCH_BASE --threads="$PREPARE_THREADS" oltp_read_only cleanup 2>/dev/null || true
+$SYSBENCH_PREPARE_BASE --threads="$PREPARE_THREADS" oltp_read_only cleanup 2>/dev/null || true
 
 echo "      Inserting data with ${PREPARE_THREADS} threads..."
-$SYSBENCH_BASE --threads="$PREPARE_THREADS" oltp_read_only prepare
+$SYSBENCH_PREPARE_BASE --threads="$PREPARE_THREADS" oltp_read_only prepare
 if [ $? -ne 0 ]; then
   echo "ERROR: Data preparation failed!" >&2
   exit 1
@@ -333,7 +346,7 @@ echo "      Data preparation complete."
 
 # Step 2: Buffer pool warmup
 echo "[2/4] Running buffer pool warmup (${WARMUP_THREADS} threads, ${WARMUP_TIME}s, results discarded)..."
-$SYSBENCH_BASE --threads="$WARMUP_THREADS" --time="$WARMUP_TIME" oltp_read_only run > /dev/null 2>&1
+$SYSBENCH_RUN_BASE --threads="$WARMUP_THREADS" --time="$WARMUP_TIME" oltp_read_only run > /dev/null 2>&1
 echo "      Warmup complete."
 
 # Step 3+4: Run benchmark matrix
@@ -357,7 +370,7 @@ for workload in $WORKLOADS; do
 
     # Run sysbench
     result_file=$(mktemp)
-    $SYSBENCH_BASE --threads="$threads" --time="$RUN_TIME" "$workload" run >"$result_file" 2>&1
+    $SYSBENCH_RUN_BASE --threads="$threads" --time="$RUN_TIME" "$workload" run >"$result_file" 2>&1
     rc=$?
     result="$(cat "$result_file")"
     rm -f "$result_file"
