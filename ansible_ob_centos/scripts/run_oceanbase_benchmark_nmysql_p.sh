@@ -40,11 +40,14 @@ RUN_TIME=300
 WARMUP_TIME=120
 WARMUP_THREADS=20
 PREPARE_THREADS=5
+RESET_RETRIES=10
+PREPARE_RETRIES=3
 REPORT_INTERVAL=5
 SLEEP_BETWEEN=30
 PREPARE_DBPS_MODE="auto"
 RUN_DBPS_MODE="disable"
 CREATE_SECONDARY="off"
+MYSQL_IGNORE_ERRORS="all"
 
 THREADS_LIST="20 50 100 200"
 WORKLOADS="oltp_read_only oltp_read_write"
@@ -68,8 +71,8 @@ SYSBENCH_BASE="sysbench --db-driver=mysql \
   --events=0 \
   --report-interval=${REPORT_INTERVAL}"
 
-SYSBENCH_PREPARE_BASE="${SYSBENCH_BASE} --db-ps-mode=${PREPARE_DBPS_MODE} --create_secondary=${CREATE_SECONDARY}"
-SYSBENCH_RUN_BASE="${SYSBENCH_BASE} --db-ps-mode=${RUN_DBPS_MODE}"
+SYSBENCH_PREPARE_BASE="${SYSBENCH_BASE} --db-ps-mode=${PREPARE_DBPS_MODE} --create_secondary=${CREATE_SECONDARY} --mysql-ignore-errors=${MYSQL_IGNORE_ERRORS}"
+SYSBENCH_RUN_BASE="${SYSBENCH_BASE} --db-ps-mode=${RUN_DBPS_MODE} --mysql-ignore-errors=${MYSQL_IGNORE_ERRORS}"
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -319,6 +322,45 @@ parse_sysbench() {
   TPS=${TPS:-0}; P95=${P95:-0}; AVG_LAT=${AVG_LAT:-0}; TOTAL_Q=${TOTAL_Q:-0}; ERRS=${ERRS:-0}
 }
 
+hard_reset_database() {
+  local ok=0
+  local i
+
+  for i in $(seq 1 "$RESET_RETRIES"); do
+    if mysql -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" \
+      -e "DROP DATABASE IF EXISTS ${MYSQL_DB}; CREATE DATABASE ${MYSQL_DB};" >/dev/null 2>&1; then
+      ok=1
+      break
+    fi
+    sleep 2
+  done
+
+  [ "$ok" -eq 1 ]
+}
+
+hard_prepare_tables() {
+  local ok=0
+  local i
+  local table_count
+  local prep_rc
+
+  for i in $(seq 1 "$PREPARE_RETRIES"); do
+    hard_reset_database || true
+    $SYSBENCH_PREPARE_BASE --threads="$PREPARE_THREADS" oltp_read_only prepare >/dev/null 2>&1
+    prep_rc=$?
+    table_count=$(mysql -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -N \
+      -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${MYSQL_DB}' AND table_name REGEXP '^sbtest[0-9]+$';" \
+      2>/dev/null || echo 0)
+    if [ "$prep_rc" -eq 0 ] || [ "${table_count:-0}" -eq "$TABLES" ]; then
+      ok=1
+      break
+    fi
+    sleep 2
+  done
+
+  [ "$ok" -eq 1 ]
+}
+
 ###############################################################################
 # Main
 ###############################################################################
@@ -338,25 +380,7 @@ echo "[0/4] Ensuring database '${MYSQL_DB}' exists..."
 mysql -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" \
   -e "CREATE DATABASE IF NOT EXISTS ${MYSQL_DB};" 2>/dev/null || true
 
-# Step 1: Prepare data
-echo "[1/4] Preparing test data (${TABLES} tables × ${TABLE_SIZE} rows, ~10 GB+)..."
-echo "      Cleaning up any existing tables first..."
-$SYSBENCH_PREPARE_BASE --threads="$PREPARE_THREADS" oltp_read_only cleanup 2>/dev/null || true
-
-echo "      Inserting data with ${PREPARE_THREADS} threads..."
-$SYSBENCH_PREPARE_BASE --threads="$PREPARE_THREADS" oltp_read_only prepare
-if [ $? -ne 0 ]; then
-  echo "ERROR: Data preparation failed!" >&2
-  exit 1
-fi
-echo "      Data preparation complete."
-
-# Step 2: Buffer pool warmup
-echo "[2/4] Running buffer pool warmup (${WARMUP_THREADS} threads, ${WARMUP_TIME}s, results discarded)..."
-$SYSBENCH_RUN_BASE --threads="$WARMUP_THREADS" --time="$WARMUP_TIME" oltp_read_only run > /dev/null 2>&1
-echo "      Warmup complete."
-
-# Step 3+4: Run benchmark matrix
+# Step 1+2+3+4: Run benchmark matrix with hard pre-run reset per case
 # Initialize CSV
 echo "timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors,exit_code,status,cpu_usage_pct,memory_usage_pct,disk_io_mbps,prom_host_load1,prom_host_cpu_pct,prom_host_mem_used_bytes,prom_host_mem_pct,prom_host_iops,prom_host_io_time_us,prom_host_io_throughput_bytes_per_s,prom_host_net_throughput_bytes_per_s,prom_ob_server_num,prom_ob_active_sessions,prom_ob_all_sessions,prom_ob_cpu_assigned_pct,prom_ob_mem_assigned_pct,prom_ob_disk_total_bytes,prom_ob_disk_free_bytes,prom_ob_plan_cache_hit_pct,prom_ob_query_p95_ms,prom_ob_wait_events,prom_tenant_cpu_total,prom_tenant_mem_total_bytes,prom_tenant_disk_data_bytes,prom_tenant_disk_log_bytes,prom_ob_qps_delete,prom_ob_qps_insert,prom_ob_qps_other,prom_ob_resp_delete_us,prom_ob_resp_insert_us,prom_ob_resp_other_us,prom_ob_tps_commit,prom_ob_tps_rollback,prom_ob_trans_resp_commit_us,prom_ob_trans_resp_rollback_us,prom_ob_trans_resp_all_us,prom_ob_trans_rollback_ratio_pct,prom_ob_request_wait_events,prom_ob_request_wait_time_us,prom_ob_request_wait_queue_ratio_pct,prom_ob_trans_log_count,prom_ob_trans_log_volume_bytes,prom_ob_trans_log_time_us,prom_ob_iops_read,prom_ob_iops_write,prom_ob_io_time_read_us,prom_ob_io_time_write_us,prom_ob_io_throughput_read_bytes,prom_ob_io_throughput_write_bytes,prom_ob_trans_count_local,prom_ob_trans_count_distributed,prom_ob_memstore_limit_mb,prom_ob_memstore_total_mb,prom_ob_memstore_trigger_mb,prom_ob_memstore_active_mb,prom_ob_bloom_cache_size_mb,prom_ob_clog_cache_size_mb,prom_ob_bloom_cache_hit_pct,prom_ob_clog_cache_hit_pct,prom_ob_bloom_cache_req_total,prom_ob_clog_cache_req_total,prom_ob_log_disk_bytes,prom_ob_log_disk_pct,prom_ob_vector_memory_bytes,prom_ob_vector_memory_pct,prom_ob_sql_plan_local,prom_ob_sql_plan_remote,prom_ob_sql_plan_distributed,prom_ob_sql_plan_time_us,prom_ob_wait_events_other,prom_ob_wait_time_other_us,prom_ob_tenant_cpu_cost_pct,prom_ob_tenant_thread_usage_pct,prom_ob_tenant_mem_usage_pct,prom_ob_memstore_usage_pct,prom_ob_rpc_package_rt_us,prom_ob_rpc_package_in_bytes,prom_ob_rpc_package_out_bytes,prom_ob_open_cursors,prom_ob_rpc_deliver_success_ratio_pct,prom_ob_gts_request_count,prom_ob_rpc_packet_net_delay_us,prom_ob_rpc_deliver_fail_count,prom_ob_lock_wait_count_success,prom_ob_lock_wait_count_fail,prom_ob_lock_wait_avg_us,prom_ob_memstore_lock_read_succ_ratio_pct,prom_ob_memstore_lock_write_succ_ratio_pct" > "$CSV_FILE"
 
@@ -370,6 +394,29 @@ for workload in $WORKLOADS; do
   for threads in $THREADS_LIST; do
     echo "  -> ${workload} threads=${threads} (${RUN_TIME}s)..."
     now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    echo "     Hard reset: recreating database '${MYSQL_DB}'..."
+    if ! hard_reset_database; then
+      echo "     FAILED: database reset failed" >&2
+      collect_prometheus_metrics
+      echo "${now},${CLUSTER_LABEL},${workload},${threads},0,0,0,0,0,1,reset_failed,0.0,0.0,0.00,${PROM_HOST_LOAD1},${PROM_HOST_CPU_PCT},${PROM_HOST_MEM_USED_BYTES},${PROM_HOST_MEM_PCT},${PROM_HOST_IOPS},${PROM_HOST_IO_TIME_US},${PROM_HOST_IO_THROUGHPUT},${PROM_HOST_NET_THROUGHPUT},${PROM_OB_SERVER_NUM},${PROM_OB_ACTIVE_SESSIONS},${PROM_OB_ALL_SESSIONS},${PROM_OB_CPU_ASSIGNED_PCT},${PROM_OB_MEM_ASSIGNED_PCT},${PROM_OB_DISK_TOTAL_BYTES},${PROM_OB_DISK_FREE_BYTES},${PROM_OB_PLAN_CACHE_HIT_PCT},${PROM_OB_QUERY_P95_MS},${PROM_OB_WAIT_EVENTS},${PROM_TENANT_CPU_TOTAL},${PROM_TENANT_MEM_TOTAL_BYTES},${PROM_TENANT_DISK_DATA_BYTES},${PROM_TENANT_DISK_LOG_BYTES},${PROM_OB_QPS_DELETE},${PROM_OB_QPS_INSERT},${PROM_OB_QPS_OTHER},${PROM_OB_RESP_DELETE_US},${PROM_OB_RESP_INSERT_US},${PROM_OB_RESP_OTHER_US},${PROM_OB_TPS_COMMIT},${PROM_OB_TPS_ROLLBACK},${PROM_OB_TRANS_RESP_COMMIT_US},${PROM_OB_TRANS_RESP_ROLLBACK_US},${PROM_OB_TRANS_RESP_ALL_US},${PROM_OB_TRANS_ROLLBACK_RATIO_PCT},${PROM_OB_REQUEST_WAIT_EVENTS},${PROM_OB_REQUEST_WAIT_TIME_US},${PROM_OB_REQUEST_WAIT_QUEUE_RATIO_PCT},${PROM_OB_TRANS_LOG_COUNT},${PROM_OB_TRANS_LOG_VOLUME_BYTES},${PROM_OB_TRANS_LOG_TIME_US},${PROM_OB_IOPS_READ},${PROM_OB_IOPS_WRITE},${PROM_OB_IO_TIME_READ_US},${PROM_OB_IO_TIME_WRITE_US},${PROM_OB_IO_THROUGHPUT_READ_BYTES},${PROM_OB_IO_THROUGHPUT_WRITE_BYTES},${PROM_OB_TRANS_COUNT_LOCAL},${PROM_OB_TRANS_COUNT_DISTRIBUTED},${PROM_OB_MEMSTORE_LIMIT_MB},${PROM_OB_MEMSTORE_TOTAL_MB},${PROM_OB_MEMSTORE_TRIGGER_MB},${PROM_OB_MEMSTORE_ACTIVE_MB},${PROM_OB_BLOOM_CACHE_SIZE_MB},${PROM_OB_CLOG_CACHE_SIZE_MB},${PROM_OB_BLOOM_CACHE_HIT_PCT},${PROM_OB_CLOG_CACHE_HIT_PCT},${PROM_OB_BLOOM_CACHE_REQ_TOTAL},${PROM_OB_CLOG_CACHE_REQ_TOTAL},${PROM_OB_LOG_DISK_BYTES},${PROM_OB_LOG_DISK_PCT},${PROM_OB_VECTOR_MEMORY_BYTES},${PROM_OB_VECTOR_MEMORY_PCT},${PROM_OB_SQL_PLAN_LOCAL},${PROM_OB_SQL_PLAN_REMOTE},${PROM_OB_SQL_PLAN_DISTRIBUTED},${PROM_OB_SQL_PLAN_TIME_US},${PROM_OB_WAIT_EVENTS_OTHER},${PROM_OB_WAIT_TIME_OTHER_US},${PROM_OB_TENANT_CPU_COST_PCT},${PROM_OB_TENANT_THREAD_USAGE_PCT},${PROM_OB_TENANT_MEM_USAGE_PCT},${PROM_OB_MEMSTORE_USAGE_PCT},${PROM_OB_RPC_PACKAGE_RT_US},${PROM_OB_RPC_PACKAGE_IN_BYTES},${PROM_OB_RPC_PACKAGE_OUT_BYTES},${PROM_OB_OPEN_CURSORS},${PROM_OB_RPC_DELIVER_SUCCESS_RATIO_PCT},${PROM_OB_GTS_REQUEST_COUNT},${PROM_OB_RPC_PACKET_NET_DELAY_US},${PROM_OB_RPC_DELIVER_FAIL_COUNT},${PROM_OB_LOCK_WAIT_COUNT_SUCCESS},${PROM_OB_LOCK_WAIT_COUNT_FAIL},${PROM_OB_LOCK_WAIT_AVG_US},${PROM_OB_MEMSTORE_LOCK_READ_SUCC_RATIO_PCT},${PROM_OB_MEMSTORE_LOCK_WRITE_SUCC_RATIO_PCT}" >> "$CSV_FILE"
+      echo "     Sleeping ${SLEEP_BETWEEN}s..."
+      sleep "$SLEEP_BETWEEN"
+      continue
+    fi
+
+    echo "     Hard prepare: rebuilding ${TABLES} sbtest tables..."
+    if ! hard_prepare_tables; then
+      echo "     FAILED: table prepare/verification failed" >&2
+      collect_prometheus_metrics
+      echo "${now},${CLUSTER_LABEL},${workload},${threads},0,0,0,0,0,1,prepare_failed,0.0,0.0,0.00,${PROM_HOST_LOAD1},${PROM_HOST_CPU_PCT},${PROM_HOST_MEM_USED_BYTES},${PROM_HOST_MEM_PCT},${PROM_HOST_IOPS},${PROM_HOST_IO_TIME_US},${PROM_HOST_IO_THROUGHPUT},${PROM_HOST_NET_THROUGHPUT},${PROM_OB_SERVER_NUM},${PROM_OB_ACTIVE_SESSIONS},${PROM_OB_ALL_SESSIONS},${PROM_OB_CPU_ASSIGNED_PCT},${PROM_OB_MEM_ASSIGNED_PCT},${PROM_OB_DISK_TOTAL_BYTES},${PROM_OB_DISK_FREE_BYTES},${PROM_OB_PLAN_CACHE_HIT_PCT},${PROM_OB_QUERY_P95_MS},${PROM_OB_WAIT_EVENTS},${PROM_TENANT_CPU_TOTAL},${PROM_TENANT_MEM_TOTAL_BYTES},${PROM_TENANT_DISK_DATA_BYTES},${PROM_TENANT_DISK_LOG_BYTES},${PROM_OB_QPS_DELETE},${PROM_OB_QPS_INSERT},${PROM_OB_QPS_OTHER},${PROM_OB_RESP_DELETE_US},${PROM_OB_RESP_INSERT_US},${PROM_OB_RESP_OTHER_US},${PROM_OB_TPS_COMMIT},${PROM_OB_TPS_ROLLBACK},${PROM_OB_TRANS_RESP_COMMIT_US},${PROM_OB_TRANS_RESP_ROLLBACK_US},${PROM_OB_TRANS_RESP_ALL_US},${PROM_OB_TRANS_ROLLBACK_RATIO_PCT},${PROM_OB_REQUEST_WAIT_EVENTS},${PROM_OB_REQUEST_WAIT_TIME_US},${PROM_OB_REQUEST_WAIT_QUEUE_RATIO_PCT},${PROM_OB_TRANS_LOG_COUNT},${PROM_OB_TRANS_LOG_VOLUME_BYTES},${PROM_OB_TRANS_LOG_TIME_US},${PROM_OB_IOPS_READ},${PROM_OB_IOPS_WRITE},${PROM_OB_IO_TIME_READ_US},${PROM_OB_IO_TIME_WRITE_US},${PROM_OB_IO_THROUGHPUT_READ_BYTES},${PROM_OB_IO_THROUGHPUT_WRITE_BYTES},${PROM_OB_TRANS_COUNT_LOCAL},${PROM_OB_TRANS_COUNT_DISTRIBUTED},${PROM_OB_MEMSTORE_LIMIT_MB},${PROM_OB_MEMSTORE_TOTAL_MB},${PROM_OB_MEMSTORE_TRIGGER_MB},${PROM_OB_MEMSTORE_ACTIVE_MB},${PROM_OB_BLOOM_CACHE_SIZE_MB},${PROM_OB_CLOG_CACHE_SIZE_MB},${PROM_OB_BLOOM_CACHE_HIT_PCT},${PROM_OB_CLOG_CACHE_HIT_PCT},${PROM_OB_BLOOM_CACHE_REQ_TOTAL},${PROM_OB_CLOG_CACHE_REQ_TOTAL},${PROM_OB_LOG_DISK_BYTES},${PROM_OB_LOG_DISK_PCT},${PROM_OB_VECTOR_MEMORY_BYTES},${PROM_OB_VECTOR_MEMORY_PCT},${PROM_OB_SQL_PLAN_LOCAL},${PROM_OB_SQL_PLAN_REMOTE},${PROM_OB_SQL_PLAN_DISTRIBUTED},${PROM_OB_SQL_PLAN_TIME_US},${PROM_OB_WAIT_EVENTS_OTHER},${PROM_OB_WAIT_TIME_OTHER_US},${PROM_OB_TENANT_CPU_COST_PCT},${PROM_OB_TENANT_THREAD_USAGE_PCT},${PROM_OB_TENANT_MEM_USAGE_PCT},${PROM_OB_MEMSTORE_USAGE_PCT},${PROM_OB_RPC_PACKAGE_RT_US},${PROM_OB_RPC_PACKAGE_IN_BYTES},${PROM_OB_RPC_PACKAGE_OUT_BYTES},${PROM_OB_OPEN_CURSORS},${PROM_OB_RPC_DELIVER_SUCCESS_RATIO_PCT},${PROM_OB_GTS_REQUEST_COUNT},${PROM_OB_RPC_PACKET_NET_DELAY_US},${PROM_OB_RPC_DELIVER_FAIL_COUNT},${PROM_OB_LOCK_WAIT_COUNT_SUCCESS},${PROM_OB_LOCK_WAIT_COUNT_FAIL},${PROM_OB_LOCK_WAIT_AVG_US},${PROM_OB_MEMSTORE_LOCK_READ_SUCC_RATIO_PCT},${PROM_OB_MEMSTORE_LOCK_WRITE_SUCC_RATIO_PCT}" >> "$CSV_FILE"
+      echo "     Sleeping ${SLEEP_BETWEEN}s..."
+      sleep "$SLEEP_BETWEEN"
+      continue
+    fi
+
+    echo "     Warmup (${WARMUP_THREADS} threads, ${WARMUP_TIME}s)..."
+    $SYSBENCH_RUN_BASE --threads="$WARMUP_THREADS" --time="$WARMUP_TIME" oltp_read_only run > /dev/null 2>&1 || true
 
     # Pre-metrics
     snap_dir=$(mktemp -d)
