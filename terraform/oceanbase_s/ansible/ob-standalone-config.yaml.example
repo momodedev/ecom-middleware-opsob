@@ -1,0 +1,37 @@
+# OBD standalone config template
+# This file is written to ~/ob-standalone.yaml by the Ansible playbook.
+# It is kept here as a reference and for manual use.
+#
+# Adjust memory_limit, datafile_size, and log_disk_size to match your VM.
+
+oceanbase-ce:
+  version: 4.5.0.0
+  servers:
+    - name: node1
+      ip: 127.0.0.1
+  global:
+    home_path:    /home/admin/oceanbase
+    data_dir:     /oceanbase/data
+    redo_dir:     /oceanbase/redo
+    log_dir:      /var/log/oceanbase
+    mysql_port:   2881
+    rpc_port:     2882
+    zone:         zone1
+    cluster_id:   1
+
+    # Memory: leave ~14 GiB for OS on a 64 GiB VM
+    memory_limit:   50G
+    system_memory:  2G
+
+    # Disk: size these based on attached disk capacity
+    datafile_size:  50G
+    log_disk_size:  50G
+
+    # CPU: leave 2 cores for OS on a 16-vCPU VM
+    cpu_count:      14
+
+    # Root password for sys tenant
+    root_password: "OceanBase#!123"   # CHANGE before production use
+
+    # Set true only when memory > 16 G and datafile_size > 100 G
+    production_mode: false

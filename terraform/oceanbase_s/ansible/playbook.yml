@@ -1,0 +1,231 @@
+---
+# =============================================================================
+# Deploy OceanBase Standalone Edition on Rocky Linux 9 (Azure D16s_v6)
+# =============================================================================
+# Usage:
+#   ansible-playbook -i inventory.ini playbook.yml \
+#       [-e ob_root_password=YourPassword] [-e ob_memory_limit=50G]
+# =============================================================================
+
+- name: Wait for SSH to become available
+  hosts: ob_standalone
+  gather_facts: false
+  tasks:
+    - name: Wait for port 22
+      wait_for:
+        port: 22
+        host: "{{ ansible_host }}"
+        delay: 10
+        timeout: 300
+      vars:
+        ansible_connection: local
+
+    - name: Verify SSH connectivity
+      command: echo "SSH OK"
+      changed_when: false
+      retries: 5
+      delay: 10
+      until: true
+
+# -----------------------------------------------------------------------------
+- name: Verify data-disk mounts
+  hosts: ob_standalone
+  become: true
+  tasks:
+    - name: Ensure /oceanbase/data is mounted
+      mount:
+        path: /oceanbase/data
+        src: LABEL=ob-data
+        fstype: ext4
+        opts: defaults,nofail
+        state: mounted
+      ignore_errors: true   # cloud-init mount script may have already done this
+
+    - name: Ensure /oceanbase/redo is mounted
+      mount:
+        path: /oceanbase/redo
+        src: LABEL=ob-redo
+        fstype: ext4
+        opts: defaults,nofail
+        state: mounted
+      ignore_errors: true
+
+    - name: Fix ownership on OceanBase directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ ob_admin_username }}"
+        group: "{{ ob_admin_username }}"
+        mode: "0755"
+      loop:
+        - /oceanbase/data
+        - /oceanbase/redo
+        - /oceanbase/server
+        - /var/log/oceanbase
+
+# -----------------------------------------------------------------------------
+- name: Configure OS for OceanBase
+  hosts: ob_standalone
+  become: true
+  vars:
+    ob_admin_username: admin
+  tasks:
+    - name: Apply sysctl settings for OceanBase
+      sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        sysctl_set: true
+        state: present
+        reload: true
+      loop:
+        - { key: "fs.aio-max-nr",            value: "1048576" }
+        - { key: "net.core.somaxconn",        value: "2048" }
+        - { key: "net.core.rmem_max",         value: "16777216" }
+        - { key: "net.core.wmem_max",         value: "16777216" }
+        - { key: "vm.swappiness",             value: "0" }
+        - { key: "vm.min_free_kbytes",        value: "2097152" }
+        - { key: "vm.overcommit_memory",      value: "0" }
+        - { key: "fs.file-max",               value: "6573688" }
+        - { key: "vm.max_map_count",          value: "655360" }
+
+    - name: Ensure file-descriptor limits file exists
+      copy:
+        dest: /etc/security/limits.d/90-oceanbase.conf
+        content: |
+          {{ ob_admin_username }} soft nofile 655350
+          {{ ob_admin_username }} hard nofile 655350
+          {{ ob_admin_username }} soft nproc  655360
+          {{ ob_admin_username }} hard nproc  655360
+          {{ ob_admin_username }} soft stack  unlimited
+          {{ ob_admin_username }} hard stack  unlimited
+          root soft nofile 655350
+          root hard nofile 655350
+        mode: "0644"
+
+    - name: Disable Transparent Huge Pages immediately
+      shell: |
+        echo never > /sys/kernel/mm/transparent_hugepage/enabled || true
+        echo never > /sys/kernel/mm/transparent_hugepage/defrag  || true
+      changed_when: false
+
+# -----------------------------------------------------------------------------
+- name: Install OBD and deploy OceanBase Standalone
+  hosts: ob_standalone
+  become: true
+  vars:
+    ob_admin_username:  admin
+    ob_cluster_name:    ob_standalone
+    ob_root_password:   "OceanBase#!123"   # override via -e or inventory vars
+    ob_memory_limit:    "50G"
+    ob_mysql_port:      2881
+    ob_rpc_port:        2882
+    ob_home_dir:        "/home/admin/oceanbase"
+    ob_data_dir:        "/oceanbase/data"
+    ob_redo_dir:        "/oceanbase/redo"
+    # OBD all-in-one installer URL (EL9 / x86_64).
+    # OceanBase All-in-One v4.5.0 package (requested target version).
+    obd_all_in_one_url: >-
+      https://obbusiness-private.oss-cn-shanghai.aliyuncs.com/download-center/opensource/oceanbase-all-in-one/8/x86_64/oceanbase-all-in-one-4.5.0_20260203.el8.x86_64.tar.gz
+    obd_install_dir:    "/tmp/obd-install"
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # 1. Install OBD via all-in-one package
+    # -------------------------------------------------------------------------
+    - name: Create OBD install staging directory
+      file:
+        path: "{{ obd_install_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Download OceanBase all-in-one installer
+      get_url:
+        url: "{{ obd_all_in_one_url }}"
+        dest: "{{ obd_install_dir }}/oceanbase-all-in-one.tar.gz"
+        timeout: 600
+        mode: "0644"
+      register: obd_download
+
+    - name: Extract all-in-one installer
+      unarchive:
+        src: "{{ obd_install_dir }}/oceanbase-all-in-one.tar.gz"
+        dest: "{{ obd_install_dir }}"
+        remote_src: true
+        creates: "{{ obd_install_dir }}/oceanbase-all-in-one"
+
+    - name: Run OBD install.sh as admin user
+      become_user: "{{ ob_admin_username }}"
+      shell: |
+        cd {{ obd_install_dir }}/oceanbase-all-in-one
+        bash install.sh
+      args:
+        creates: "/home/{{ ob_admin_username }}/.oceanbase-all-in-one/bin/obd"
+
+    # -------------------------------------------------------------------------
+    # 2. Write OBD deployment config
+    # -------------------------------------------------------------------------
+    - name: Create OBD config directory for admin user
+      become_user: "{{ ob_admin_username }}"
+      file:
+        path: "/home/{{ ob_admin_username }}/.obd/cluster"
+        state: directory
+        mode: "0750"
+
+    - name: Write OBD standalone config file
+      become_user: "{{ ob_admin_username }}"
+      copy:
+        dest: "/home/{{ ob_admin_username }}/ob-standalone.yaml"
+        mode: "0640"
+        content: |
+          oceanbase-ce:
+            version: 4.5.0.0
+            servers:
+              - name: node1
+                ip: 127.0.0.1
+            global:
+              home_path: {{ ob_home_dir }}
+              data_dir:  {{ ob_data_dir }}
+              redo_dir:  {{ ob_redo_dir }}
+              log_dir:   /var/log/oceanbase
+              mysql_port: {{ ob_mysql_port }}
+              rpc_port:   {{ ob_rpc_port }}
+              zone:       zone1
+              cluster_id: 1
+              memory_limit:   {{ ob_memory_limit }}
+              system_memory:  2G
+              datafile_size:  50G
+              log_disk_size:  50G
+              cpu_count:      14
+              root_password:  "{{ ob_root_password }}"
+              production_mode: false
+
+    # -------------------------------------------------------------------------
+    # 3. Deploy and start OceanBase
+    # -------------------------------------------------------------------------
+    - name: Deploy OceanBase standalone cluster with OBD
+      become_user: "{{ ob_admin_username }}"
+      shell: |
+        source ~/.oceanbase-all-in-one/bin/env.sh
+        obd cluster deploy {{ ob_cluster_name }} -c ~/ob-standalone.yaml -y
+      args:
+        creates: "/home/{{ ob_admin_username }}/.obd/cluster/{{ ob_cluster_name }}"
+      register: ob_deploy
+
+    - name: Start OceanBase standalone cluster
+      become_user: "{{ ob_admin_username }}"
+      shell: |
+        source ~/.oceanbase-all-in-one/bin/env.sh
+        obd cluster start {{ ob_cluster_name }}
+      register: ob_start
+      changed_when: "'started' in ob_start.stdout | lower"
+
+    - name: Display post-deployment connection info
+      debug:
+        msg:
+          - "============================================================="
+          - "OceanBase Standalone deployed successfully!"
+          - "Connect (from this host): mysql -h127.0.0.1 -P{{ ob_mysql_port }} -uroot@sys -p{{ ob_root_password }}"
+          - "Connect (from outside):   mysql -h<PUBLIC_IP>  -P{{ ob_mysql_port }} -uroot@sys -p{{ ob_root_password }}"
+          - "OBD status:  obd cluster list"
+          - "OBD display: obd cluster display {{ ob_cluster_name }}"
+          - "============================================================="
