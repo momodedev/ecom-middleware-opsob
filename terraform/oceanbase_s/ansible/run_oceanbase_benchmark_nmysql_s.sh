@@ -1,0 +1,297 @@
+#!/usr/bin/env bash
+###############################################################################
+# run_oceanbase_benchmark_nmysql_s.sh
+#
+# OceanBase standalone sysbench benchmark (nmysql-style matrix)
+#
+# Test profile:
+#   - 90 tables x 500,000 rows
+#   - Warmup: 120s (50 threads, read_only, discarded)
+#   - Run time: 300s per case
+#   - Workloads: oltp_read_only, oltp_read_write
+#   - Thread ladder: 20, 50, 100, 200
+#   - 30s cooldown between cases
+#
+# Usage:
+#   ./run_oceanbase_benchmark_nmysql_s.sh <cluster_label> <mysql_host> \
+#       <mysql_user> <mysql_password> <mysql_db> [observer_ips]
+#
+# Example:
+#   ./run_oceanbase_benchmark_nmysql_s.sh d16s_v6_obs 13.83.163.165 \
+#       root@sys 'OceanBase#!123' sbtest "13.83.163.165"
+###############################################################################
+set -Eeuo pipefail
+
+if [ "$#" -lt 5 ]; then
+  echo "Usage: $0 <cluster_label> <mysql_host> <mysql_user> <mysql_password> <mysql_db> [observer_ips]" >&2
+  exit 1
+fi
+
+require_cmd() {
+  local c="$1"
+  command -v "$c" >/dev/null 2>&1 || {
+    echo "ERROR: required command not found: $c" >&2
+    exit 1
+  }
+}
+
+CLUSTER_LABEL="$1"
+MYSQL_HOST="$2"
+MYSQL_USER="$3"
+MYSQL_PASSWORD="$4"
+MYSQL_DB="$5"
+OBSERVER_IPS="${6:-$MYSQL_HOST}"
+
+MYSQL_PORT="${MYSQL_PORT:-2881}"
+TABLE_SIZE="${TABLE_SIZE:-500000}"
+TABLES="${TABLES:-90}"
+RUN_TIME="${RUN_TIME:-300}"
+WARMUP_TIME="${WARMUP_TIME:-120}"
+WARMUP_THREADS="${WARMUP_THREADS:-50}"
+PREPARE_THREADS="${PREPARE_THREADS:-50}"
+REPORT_INTERVAL="${REPORT_INTERVAL:-5}"
+SLEEP_BETWEEN="${SLEEP_BETWEEN:-30}"
+THREADS_LIST="${THREADS_LIST:-20 50 100 200}"
+WORKLOADS="${WORKLOADS:-oltp_read_only oltp_read_write}"
+
+OUTPUT_DIR="${OUTPUT_DIR:-/tmp/oceanbase-bench}"
+CSV_FILE="${OUTPUT_DIR}/${CLUSTER_LABEL}.csv"
+LOG_FILE="${OUTPUT_DIR}/${CLUSTER_LABEL}.log"
+
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_rsa}"
+SSH_USER="${SSH_USER:-admin}"
+
+require_cmd awk
+require_cmd grep
+require_cmd sed
+require_cmd date
+require_cmd mktemp
+require_cmd sysbench
+
+if command -v mysql >/dev/null 2>&1; then
+  SQL_CLIENT="mysql"
+elif command -v obclient >/dev/null 2>&1; then
+  SQL_CLIENT="obclient"
+else
+  echo "ERROR: mysql or obclient client is required for database bootstrap" >&2
+  exit 1
+fi
+
+mkdir -p "$OUTPUT_DIR"
+: > "$LOG_FILE"
+
+log() {
+  local ts
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "[$ts] $*" | tee -a "$LOG_FILE"
+}
+
+SYSBENCH_BASE=(
+  sysbench
+  --db-driver=mysql
+  --mysql-host="${MYSQL_HOST}"
+  --mysql-port="${MYSQL_PORT}"
+  --mysql-user="${MYSQL_USER}"
+  --mysql-password="${MYSQL_PASSWORD}"
+  --mysql-db="${MYSQL_DB}"
+  --tables="${TABLES}"
+  --table-size="${TABLE_SIZE}"
+  --events=0
+  --report-interval="${REPORT_INTERVAL}"
+  --db-ps-mode=disable
+)
+
+collect_pre_metrics() {
+  local snap_dir="$1"
+  local got=0
+  for mip in $OBSERVER_IPS; do
+    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes \
+      -i "$SSH_KEY" "${SSH_USER}@${mip}" \
+      "head -1 /proc/stat; echo ===SEP===; cat /proc/diskstats" \
+      > "${snap_dir}/before_${mip}" 2>/dev/null; then
+      got=1
+    fi
+  done
+  return $got
+}
+
+collect_post_metrics() {
+  local snap_dir="$1"
+  local got=0
+  for mip in $OBSERVER_IPS; do
+    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes \
+      -i "$SSH_KEY" "${SSH_USER}@${mip}" \
+      "head -1 /proc/stat; echo ===SEP===; cat /proc/diskstats; echo ===SEP===; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo" \
+      > "${snap_dir}/after_${mip}" 2>/dev/null; then
+      got=1
+    fi
+  done
+  return $got
+}
+
+compute_metrics() {
+  local snap_dir="$1"
+  local duration="$2"
+  local cpu_sum=0 mem_sum=0 disk_sum=0 obs_count=0
+
+  for mip in $OBSERVER_IPS; do
+    local bf="${snap_dir}/before_${mip}"
+    local af="${snap_dir}/after_${mip}"
+    [ -s "$bf" ] && [ -s "$af" ] || continue
+    obs_count=$((obs_count + 1))
+
+    local c m d
+    c=$(awk '
+      FNR==1 && NR==1 {for(i=2;i<=NF;i++) tb+=$i; ib=$5}
+      FNR==1 && NR!=1 {for(i=2;i<=NF;i++) ta+=$i; ia=$5}
+      END {
+        dt=ta-tb; didle=ia-ib;
+        if (dt>0) printf "%.1f", 100*(1-didle/dt); else print "0.0"
+      }
+    ' "$bf" "$af")
+    c="${c:-0.0}"
+    cpu_sum=$(awk "BEGIN{printf \"%.1f\",${cpu_sum}+${c}}")
+
+    m=$(awk '
+      BEGIN{p=0}
+      /===SEP===/{p++; next}
+      p>=2 && /^MemTotal/{t=$2}
+      p>=2 && /^MemAvailable/{a=$2}
+      END{if(t>0) printf "%.1f",(t-a)/t*100; else print "0.0"}
+    ' "$af")
+    m="${m:-0.0}"
+    mem_sum=$(awk "BEGIN{printf \"%.1f\",${mem_sum}+${m}}")
+
+    d=$(awk -v dur="$duration" '
+      BEGIN{ph="b"}
+      FILENAME==ARGV[1] && /===SEP===/{ph="bd"; next}
+      FILENAME==ARGV[2] && /===SEP===/{
+        if (ph=="a") ph="am"; else ph="a";
+        next
+      }
+      {
+        if ($3 ~ /^(sd[a-z]|nvme[0-9]+n[0-9]+)$/) {
+          if (FILENAME==ARGV[1] && ph=="bd") {br+=$6; bw+=$10}
+          if (FILENAME==ARGV[2] && ph=="a")  {ar+=$6; aw+=$10}
+        }
+      }
+      END{
+        delta=(ar-br)+(aw-bw);
+        if (dur>0) printf "%.2f", delta*512/1024/1024/dur; else print "0.00"
+      }
+    ' "$bf" "$af")
+    d="${d:-0.00}"
+    disk_sum=$(awk "BEGIN{printf \"%.2f\",${disk_sum}+${d}}")
+  done
+
+  if [ "$obs_count" -gt 0 ]; then
+    METRIC_CPU=$(awk "BEGIN{printf \"%.1f\",${cpu_sum}/${obs_count}}")
+    METRIC_MEM=$(awk "BEGIN{printf \"%.1f\",${mem_sum}/${obs_count}}")
+    METRIC_DISK=$(awk "BEGIN{printf \"%.2f\",${disk_sum}/${obs_count}}")
+  else
+    METRIC_CPU="0.0"
+    METRIC_MEM="0.0"
+    METRIC_DISK="0.00"
+  fi
+}
+
+parse_sysbench() {
+  local result="$1"
+
+  TPS=$(echo "$result" | awk -F'[()]' '/transactions:/ {gsub(/ per sec\./, "", $2); print $2}' | awk '{print $1}' | tail -1)
+  P95=$(echo "$result" | awk '/95th percentile:/ {print $3}' | tail -1)
+  AVG_LAT=$(echo "$result" | awk '/avg:/ {print $2}' | tail -1)
+  TOTAL_Q=$(echo "$result" | awk '/^[[:space:]]*queries:[[:space:]]+[0-9]+/ {print $2}' | tail -1)
+  if [ -z "${TOTAL_Q:-}" ]; then
+    TOTAL_Q=$(echo "$result" | awk '/^[[:space:]]*total:[[:space:]]+[0-9]+/ {print $2}' | tail -1)
+  fi
+  TOTAL_Q=$(echo "${TOTAL_Q:-0}" | tr -d ',')
+  ERRS=$(echo "$result" | awk -F': ' '/ignored errors:/ {print $2}' | awk '{print $1}' | tail -1)
+
+  TPS="${TPS:-0}"
+  P95="${P95:-0}"
+  AVG_LAT="${AVG_LAT:-0}"
+  TOTAL_Q="${TOTAL_Q:-0}"
+  ERRS="${ERRS:-0}"
+}
+
+log "=========================================="
+log "OceanBase Benchmark (nmysql standalone)"
+log "Cluster:   ${CLUSTER_LABEL}"
+log "Host:      ${MYSQL_HOST}:${MYSQL_PORT}"
+log "Tables:    ${TABLES} x ${TABLE_SIZE}"
+log "Run:       ${RUN_TIME}s per case"
+log "Warmup:    ${WARMUP_TIME}s (${WARMUP_THREADS} threads)"
+log "Threads:   ${THREADS_LIST}"
+log "Workloads: ${WORKLOADS}"
+log "CSV:       ${CSV_FILE}"
+log "LOG:       ${LOG_FILE}"
+log "=========================================="
+
+log "[0/4] Ensuring database '${MYSQL_DB}' exists..."
+if [ "$SQL_CLIENT" = "mysql" ]; then
+  mysql -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" \
+    -e "CREATE DATABASE IF NOT EXISTS ${MYSQL_DB};" >/dev/null 2>&1 || true
+else
+  obclient -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" \
+    -e "CREATE DATABASE IF NOT EXISTS ${MYSQL_DB};" >/dev/null 2>&1 || true
+fi
+
+log "[1/4] Preparing data (${TABLES} tables x ${TABLE_SIZE} rows)..."
+"${SYSBENCH_BASE[@]}" --threads="$PREPARE_THREADS" oltp_read_only cleanup >/dev/null 2>&1 || true
+"${SYSBENCH_BASE[@]}" --threads="$PREPARE_THREADS" oltp_read_only prepare | tee -a "$LOG_FILE"
+
+log "[2/4] Warmup (${WARMUP_THREADS} threads, ${WARMUP_TIME}s)..."
+"${SYSBENCH_BASE[@]}" --threads="$WARMUP_THREADS" --time="$WARMUP_TIME" oltp_read_only run >/dev/null 2>&1
+
+echo "timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors,exit_code,status,cpu_usage_pct,memory_usage_pct,disk_io_mbps" > "$CSV_FILE"
+
+for workload in $WORKLOADS; do
+  if [ "$workload" = "oltp_read_only" ]; then
+    log "[3/4] Running read-only gradient stress test"
+  else
+    log "[4/4] Running read-write gradient stress test"
+  fi
+
+  for threads in $THREADS_LIST; do
+    local_now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    log "Case: workload=${workload}, threads=${threads}, duration=${RUN_TIME}s"
+
+    snap_dir="$(mktemp -d)"
+    collect_pre_metrics "$snap_dir" || true
+
+    result_file="$(mktemp)"
+    set +e
+    "${SYSBENCH_BASE[@]}" --threads="$threads" --time="$RUN_TIME" "$workload" run >"$result_file" 2>&1
+    rc=$?
+    set -e
+
+    result="$(cat "$result_file")"
+    rm -f "$result_file"
+
+    collect_post_metrics "$snap_dir" || true
+    compute_metrics "$snap_dir" "$RUN_TIME"
+    rm -rf "$snap_dir"
+
+    parse_sysbench "$result"
+
+    status="ok"
+    if [ "$rc" -ne 0 ]; then
+      status="failed"
+      log "FAILED: rc=${rc}"
+    else
+      log "OK: TPS=${TPS}, P95=${P95}ms, Avg=${AVG_LAT}ms"
+    fi
+
+    echo "${local_now},${CLUSTER_LABEL},${workload},${threads},${TPS},${P95},${AVG_LAT},${TOTAL_Q},${ERRS},${rc},${status},${METRIC_CPU},${METRIC_MEM},${METRIC_DISK}" >> "$CSV_FILE"
+
+    log "Cooling down ${SLEEP_BETWEEN}s"
+    sleep "$SLEEP_BETWEEN"
+  done
+done
+
+log "=========================================="
+log "Benchmark complete"
+log "CSV: ${CSV_FILE}"
+log "=========================================="
+cat "$CSV_FILE"
