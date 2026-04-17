@@ -1,0 +1,9 @@
+timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors,exit_code,status,cpu_usage_pct,memory_usage_pct,disk_io_mbps
+2026-04-17T06:42:30Z,tuned_20260417,oltp_read_only,20,983.81,31.37,20.33,4722592,0,0,ok,0.0,0.0,0.00
+2026-04-17T06:48:10Z,tuned_20260417,oltp_read_only,50,1161.81,73.13,43.03,5577584,0,0,ok,0.0,0.0,0.00
+2026-04-17T06:53:50Z,tuned_20260417,oltp_read_only,100,1309.08,104.84,76.38,6284640,0,0,ok,0.0,0.0,0.00
+2026-04-17T06:59:30Z,tuned_20260417,oltp_read_only,200,1372.28,173.58,145.72,6589376,0,0,ok,0.0,0.0,0.00
+2026-04-17T07:05:11Z,tuned_20260417,oltp_read_write,20,737.24,37.56,27.13,4423720,0,0,ok,0.0,0.0,0.00
+2026-04-17T07:52:03Z,tuned_rw_retry_20260417,oltp_read_write,50,329.63,287.38,151.65,1978640,0,0,ok,0.0,0.0,0.00
+2026-04-17T07:12:21Z,tuned_20260417,oltp_read_write,100,865.39,200.47,115.54,5193720,0,0,ok,0.0,0.0,0.00
+2026-04-17T07:57:43Z,tuned_rw_retry_20260417,oltp_read_write,200,509.84,682.06,392.15,3061360,0,0,ok,0.0,0.0,0.00
