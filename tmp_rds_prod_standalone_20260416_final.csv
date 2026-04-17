@@ -1,0 +1,9 @@
+timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors,exit_code,status,cpu_usage_pct,memory_usage_pct,disk_io_mbps
+2026-04-16T15:26:13Z,rds_prod_standalone_20260416,oltp_read_only,20,776.02,47.47,25.77,3725200,0,0,ok,0.0,0.0,0.00
+2026-04-16T15:31:46Z,rds_prod_standalone_20260416,oltp_read_only,50,655.33,153.02,76.29,3146096,0,0,ok,0.0,0.0,0.00
+2026-04-16T15:37:21Z,rds_prod_standalone_20260416,oltp_read_only,100,839.16,150.29,119.15,4029152,0,0,ok,0.0,0.0,0.00
+2026-04-16T15:43:01Z,rds_prod_standalone_20260416,oltp_read_only,200,1007.99,257.95,198.32,4841264,0,0,ok,0.0,0.0,0.00
+2026-04-16T15:48:41Z,rds_prod_standalone_20260416,oltp_read_write,20,991.71,31.37,20.17,5950600,0,0,ok,0.0,0.0,0.00
+2026-04-16T15:54:21Z,rds_prod_standalone_20260416,oltp_read_write,50,907.08,87.56,55.10,5445800,0,0,ok,0.0,0.0,0.00
+2026-04-16T16:00:02Z,rds_prod_standalone_20260416,oltp_read_write,100,782.08,200.47,127.85,4693620,0,0,ok,0.0,0.0,0.00
+2026-04-16T16:05:42Z,rds_prod_standalone_20260416,oltp_read_write,200,670.57,475.79,298.18,4025780,0,0,ok,0.0,0.0,0.00
