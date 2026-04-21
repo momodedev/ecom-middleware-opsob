@@ -244,7 +244,7 @@ log "[1/4] Preparing data (${TABLES} tables x ${TABLE_SIZE} rows)..."
 log "[2/4] Warmup (${WARMUP_THREADS} threads, ${WARMUP_TIME}s)..."
 "${SYSBENCH_BASE[@]}" --threads="$WARMUP_THREADS" --time="$WARMUP_TIME" oltp_read_only run >/dev/null 2>&1
 
-echo "timestamp,cluster_label,workload,threads,tps,p95_ms,avg_latency_ms,total_queries,errors,exit_code,status,cpu_usage_pct,memory_usage_pct,disk_io_mbps" > "$CSV_FILE"
+echo "timestamp,label,workload,threads,tps,p95_latency,avg_latency,total_queries,errors,rc,status,cpu_pct,mem_pct,disk_io_mbps" > "$CSV_FILE"
 
 for workload in $WORKLOADS; do
   if [ "$workload" = "oltp_read_only" ]; then
