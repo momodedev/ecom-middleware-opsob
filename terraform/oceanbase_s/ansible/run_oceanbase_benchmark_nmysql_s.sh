@@ -51,8 +51,10 @@ WARMUP_THREADS="${WARMUP_THREADS:-50}"
 PREPARE_THREADS="${PREPARE_THREADS:-50}"
 REPORT_INTERVAL="${REPORT_INTERVAL:-5}"
 SLEEP_BETWEEN="${SLEEP_BETWEEN:-30}"
+SKIP_PREPARE="${SKIP_PREPARE:-0}"
+COLLECT_HOST_METRICS="${COLLECT_HOST_METRICS:-1}"
 THREADS_LIST="${THREADS_LIST:-20 50 100 200}"
-WORKLOADS="${WORKLOADS:-oltp_read_only oltp_read_write}"
+WORKLOADS="${WORKLOADS:-oltp_read_only oltp_write_only oltp_read_write}"
 
 OUTPUT_DIR="${OUTPUT_DIR:-/tmp/oceanbase-bench}"
 CSV_FILE="${OUTPUT_DIR}/${CLUSTER_LABEL}.csv"
@@ -60,6 +62,9 @@ LOG_FILE="${OUTPUT_DIR}/${CLUSTER_LABEL}.log"
 
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_rsa}"
 SSH_USER="${SSH_USER:-admin}"
+SSH_PORT="${SSH_PORT:-22}"
+SSH_USERS="${SSH_USERS:-${SSH_USER} azureadmin admin root}"
+SSH_PORTS="${SSH_PORTS:-${SSH_PORT} 6666 22}"
 
 require_cmd awk
 require_cmd grep
@@ -86,6 +91,24 @@ log() {
   echo "[$ts] $*" | tee -a "$LOG_FILE"
 }
 
+count_words() {
+  awk '{print NF}' <<<"$1"
+}
+
+validate_workloads() {
+  local wl
+  for wl in $WORKLOADS; do
+    case "$wl" in
+      oltp_read_only|oltp_write_only|oltp_read_write)
+        ;;
+      *)
+        echo "ERROR: unsupported workload '${wl}'. Supported: oltp_read_only oltp_write_only oltp_read_write" >&2
+        return 1
+        ;;
+    esac
+  done
+}
+
 SYSBENCH_BASE=(
   sysbench
   --db-driver=mysql
@@ -105,28 +128,56 @@ collect_pre_metrics() {
   local snap_dir="$1"
   local got=0
   for mip in $OBSERVER_IPS; do
-    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes \
-      -i "$SSH_KEY" "${SSH_USER}@${mip}" \
-      "head -1 /proc/stat; echo ===SEP===; cat /proc/diskstats" \
-      > "${snap_dir}/before_${mip}" 2>/dev/null; then
+    local ok=0
+    local out_file="${snap_dir}/before_${mip}"
+    for su in $SSH_USERS; do
+      for sp in $SSH_PORTS; do
+        if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes \
+          -i "$SSH_KEY" -p "$sp" "${su}@${mip}" \
+          "head -1 /proc/stat; echo ===SEP===; cat /proc/diskstats" \
+          > "$out_file" 2>/dev/null; then
+          ok=1
+          break
+        fi
+      done
+      [ "$ok" -eq 1 ] && break
+    done
+    if [ "$ok" -eq 1 ]; then
       got=1
+    else
+      rm -f "$out_file"
+      log "WARN: pre-metrics snapshot failed for ${mip} (checked users: ${SSH_USERS}; ports: ${SSH_PORTS})"
     fi
   done
-  return $got
+  [ "$got" -eq 1 ]
 }
 
 collect_post_metrics() {
   local snap_dir="$1"
   local got=0
   for mip in $OBSERVER_IPS; do
-    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes \
-      -i "$SSH_KEY" "${SSH_USER}@${mip}" \
-      "head -1 /proc/stat; echo ===SEP===; cat /proc/diskstats; echo ===SEP===; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo" \
-      > "${snap_dir}/after_${mip}" 2>/dev/null; then
+    local ok=0
+    local out_file="${snap_dir}/after_${mip}"
+    for su in $SSH_USERS; do
+      for sp in $SSH_PORTS; do
+        if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes \
+          -i "$SSH_KEY" -p "$sp" "${su}@${mip}" \
+          "head -1 /proc/stat; echo ===SEP===; cat /proc/diskstats; echo ===SEP===; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo" \
+          > "$out_file" 2>/dev/null; then
+          ok=1
+          break
+        fi
+      done
+      [ "$ok" -eq 1 ] && break
+    done
+    if [ "$ok" -eq 1 ]; then
       got=1
+    else
+      rm -f "$out_file"
+      log "WARN: post-metrics snapshot failed for ${mip} (checked users: ${SSH_USERS}; ports: ${SSH_PORTS})"
     fi
   done
-  return $got
+  [ "$got" -eq 1 ]
 }
 
 compute_metrics() {
@@ -224,9 +275,21 @@ log "Run:       ${RUN_TIME}s per case"
 log "Warmup:    ${WARMUP_TIME}s (${WARMUP_THREADS} threads)"
 log "Threads:   ${THREADS_LIST}"
 log "Workloads: ${WORKLOADS}"
+log "Skip prepare: ${SKIP_PREPARE}"
+log "Collect host metrics: ${COLLECT_HOST_METRICS}"
 log "CSV:       ${CSV_FILE}"
 log "LOG:       ${LOG_FILE}"
 log "=========================================="
+
+validate_workloads
+
+total_workloads="$(count_words "$WORKLOADS")"
+total_threads="$(count_words "$THREADS_LIST")"
+total_cases=$((total_workloads * total_threads))
+done_cases=0
+failed_cases=0
+
+log "Matrix:    ${total_workloads} workloads x ${total_threads} thread levels = ${total_cases} cases"
 
 log "[0/4] Ensuring database '${MYSQL_DB}' exists..."
 if [ "$SQL_CLIENT" = "mysql" ]; then
@@ -237,28 +300,48 @@ else
     -e "CREATE DATABASE IF NOT EXISTS ${MYSQL_DB};" >/dev/null 2>&1 || true
 fi
 
-log "[1/4] Preparing data (${TABLES} tables x ${TABLE_SIZE} rows)..."
-"${SYSBENCH_BASE[@]}" --threads="$PREPARE_THREADS" oltp_read_only cleanup >/dev/null 2>&1 || true
-"${SYSBENCH_BASE[@]}" --threads="$PREPARE_THREADS" oltp_read_only prepare | tee -a "$LOG_FILE"
+if [ "$SKIP_PREPARE" = "1" ]; then
+  log "[1/4] SKIP_PREPARE=1, reusing existing benchmark data"
+else
+  log "[1/4] Preparing data (${TABLES} tables x ${TABLE_SIZE} rows)..."
+  "${SYSBENCH_BASE[@]}" --threads="$PREPARE_THREADS" oltp_read_only cleanup >/dev/null 2>&1 || true
+  "${SYSBENCH_BASE[@]}" --threads="$PREPARE_THREADS" oltp_read_only prepare | tee -a "$LOG_FILE"
+fi
 
 log "[2/4] Warmup (${WARMUP_THREADS} threads, ${WARMUP_TIME}s)..."
 "${SYSBENCH_BASE[@]}" --threads="$WARMUP_THREADS" --time="$WARMUP_TIME" oltp_read_only run >/dev/null 2>&1
 
 echo "timestamp,label,workload,threads,tps,p95_latency,avg_latency,total_queries,errors,rc,status,cpu_pct,mem_pct,disk_io_mbps" > "$CSV_FILE"
 
+workload_idx=0
 for workload in $WORKLOADS; do
-  if [ "$workload" = "oltp_read_only" ]; then
-    log "[3/4] Running read-only gradient stress test"
-  else
-    log "[4/4] Running read-write gradient stress test"
-  fi
+  workload_idx=$((workload_idx + 1))
+  case "$workload" in
+    oltp_read_only)
+      workload_desc="read-only"
+      ;;
+    oltp_read_write)
+      workload_desc="read-write"
+      ;;
+    oltp_write_only)
+      workload_desc="write-only"
+      ;;
+    *)
+      workload_desc="$workload"
+      ;;
+  esac
+
+  log "[workload ${workload_idx}/${total_workloads}] Running ${workload_desc} gradient stress test (${workload})"
 
   for threads in $THREADS_LIST; do
+    done_cases=$((done_cases + 1))
     local_now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    log "Case: workload=${workload}, threads=${threads}, duration=${RUN_TIME}s"
+    log "Case [${done_cases}/${total_cases}]: workload=${workload}, threads=${threads}, duration=${RUN_TIME}s"
 
     snap_dir="$(mktemp -d)"
-    collect_pre_metrics "$snap_dir" || true
+    if [ "$COLLECT_HOST_METRICS" = "1" ]; then
+      collect_pre_metrics "$snap_dir" || true
+    fi
 
     result_file="$(mktemp)"
     set +e
@@ -269,8 +352,14 @@ for workload in $WORKLOADS; do
     result="$(cat "$result_file")"
     rm -f "$result_file"
 
-    collect_post_metrics "$snap_dir" || true
-    compute_metrics "$snap_dir" "$RUN_TIME"
+    if [ "$COLLECT_HOST_METRICS" = "1" ]; then
+      collect_post_metrics "$snap_dir" || true
+      compute_metrics "$snap_dir" "$RUN_TIME"
+    else
+      METRIC_CPU="0.0"
+      METRIC_MEM="0.0"
+      METRIC_DISK="0.00"
+    fi
     rm -rf "$snap_dir"
 
     parse_sysbench "$result"
@@ -278,6 +367,7 @@ for workload in $WORKLOADS; do
     status="ok"
     if [ "$rc" -ne 0 ]; then
       status="failed"
+      failed_cases=$((failed_cases + 1))
       log "FAILED: rc=${rc}"
     else
       log "OK: TPS=${TPS}, P95=${P95}ms, Avg=${AVG_LAT}ms"
@@ -293,5 +383,12 @@ done
 log "=========================================="
 log "Benchmark complete"
 log "CSV: ${CSV_FILE}"
+if [ "$failed_cases" -gt 0 ]; then
+  log "FAILED CASES: ${failed_cases}/${total_cases}"
+  log "=========================================="
+  cat "$CSV_FILE"
+  exit 2
+fi
+log "All cases succeeded: ${done_cases}/${total_cases}"
 log "=========================================="
 cat "$CSV_FILE"
