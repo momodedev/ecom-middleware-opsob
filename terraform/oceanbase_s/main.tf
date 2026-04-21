@@ -116,6 +116,15 @@ resource "azurerm_public_ip" "pip" {
   sku                 = "Standard"
 
   tags = { Component = "ob-standalone" }
+
+  # Azure may inject provider-managed metadata (for example FirstPartyUsage)
+  # and normalize zones. Ignore these to avoid destructive replacement.
+  lifecycle {
+    ignore_changes = [
+      ip_tags,
+      zones,
+    ]
+  }
 }
 
 # --------------------------------------------------------------------------- #

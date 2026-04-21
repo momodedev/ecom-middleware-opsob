@@ -41,6 +41,7 @@ resource "azurerm_linux_virtual_machine" "ob_standalone" {
   # Inject OS-level preparation via cloud-init
   custom_data = base64encode(templatefile("${path.module}/cloud-init.tpl", {
     ob_admin_username = var.ob_admin_username
+    ob_mount_options  = var.ob_mount_options
   }))
 
   identity {

@@ -11,9 +11,9 @@
   hosts: ob_standalone
   gather_facts: false
   tasks:
-    - name: Wait for port 22
+    - name: Wait for SSH port
       wait_for:
-        port: 22
+        port: "{{ ansible_port | default(22) }}"
         host: "{{ ansible_host }}"
         delay: 10
         timeout: 300
@@ -21,23 +21,30 @@
         ansible_connection: local
 
     - name: Verify SSH connectivity
-      command: echo "SSH OK"
+      raw: echo "SSH OK"
+      register: ssh_ok
       changed_when: false
       retries: 5
       delay: 10
-      until: true
+      until: ssh_ok.rc == 0
+
+    - name: Wait for cloud-init to finish
+      command: cloud-init status --wait
+      changed_when: false
 
 # -----------------------------------------------------------------------------
 - name: Verify data-disk mounts
   hosts: ob_standalone
   become: true
+  vars:
+    ob_mount_options: "defaults,noatime,nodiratime,nofail"
   tasks:
     - name: Ensure /oceanbase/data is mounted
       mount:
         path: /oceanbase/data
         src: LABEL=ob-data
         fstype: ext4
-        opts: defaults,nofail
+        opts: "{{ ob_mount_options }}"
         state: mounted
       ignore_errors: true   # cloud-init mount script may have already done this
 
@@ -46,7 +53,7 @@
         path: /oceanbase/redo
         src: LABEL=ob-redo
         fstype: ext4
-        opts: defaults,nofail
+        opts: "{{ ob_mount_options }}"
         state: mounted
       ignore_errors: true
 
@@ -67,9 +74,49 @@
 - name: Configure OS for OceanBase
   hosts: ob_standalone
   become: true
-  vars:
-    ob_admin_username: admin
   tasks:
+    - name: Ensure firewalld is installed
+      package:
+        name: firewalld
+        state: present
+
+    - name: Ensure firewalld is enabled and running
+      service:
+        name: firewalld
+        enabled: true
+        state: started
+
+    - name: Check required OceanBase ports in firewalld
+      command: firewall-cmd --permanent --query-port={{ item }}
+      register: firewall_port_checks
+      changed_when: false
+      failed_when: false
+      loop:
+        - 2881/tcp
+        - 2882/tcp
+
+    - name: Open required OceanBase ports in firewalld
+      command: firewall-cmd --permanent --add-port={{ item.item }}
+      loop: "{{ firewall_port_checks.results }}"
+      when: item.rc != 0
+      register: firewall_port_adds
+      changed_when: item.rc != 0
+
+    - name: Reload firewalld when rules changed
+      command: firewall-cmd --reload
+      when: firewall_port_adds is defined and (firewall_port_adds.results | selectattr('changed') | list | length) > 0
+
+    - name: Persist SELinux disabled
+      lineinfile:
+        path: /etc/selinux/config
+        regexp: '^SELINUX='
+        line: SELINUX=disabled
+
+    - name: Disable SELinux for current boot
+      command: setenforce 0
+      changed_when: false
+      failed_when: false
+
     - name: Apply sysctl settings for OceanBase
       sysctl:
         name: "{{ item.key }}"
@@ -80,8 +127,12 @@
       loop:
         - { key: "fs.aio-max-nr",            value: "1048576" }
         - { key: "net.core.somaxconn",        value: "2048" }
+        - { key: "net.core.netdev_max_backlog", value: "10000" }
+        - { key: "net.core.rmem_default",     value: "16777216" }
+        - { key: "net.core.wmem_default",     value: "16777216" }
         - { key: "net.core.rmem_max",         value: "16777216" }
         - { key: "net.core.wmem_max",         value: "16777216" }
+        - { key: "net.ipv4.tcp_syncookies",   value: "1" }
         - { key: "vm.swappiness",             value: "0" }
         - { key: "vm.min_free_kbytes",        value: "2097152" }
         - { key: "vm.overcommit_memory",      value: "0" }
@@ -113,13 +164,9 @@
   hosts: ob_standalone
   become: true
   vars:
-    ob_admin_username:  admin
-    ob_cluster_name:    ob_standalone
-    ob_root_password:   "OceanBase#!123"   # override via -e or inventory vars
-    ob_memory_limit:    "50G"
     ob_mysql_port:      2881
     ob_rpc_port:        2882
-    ob_home_dir:        "/home/admin/oceanbase"
+    ob_home_dir:        "/home/{{ ob_admin_username }}/oceanbase"
     ob_data_dir:        "/oceanbase/data"
     ob_redo_dir:        "/oceanbase/redo"
     # OBD all-in-one installer URL (EL9 / x86_64).

@@ -23,7 +23,7 @@ output "ansible_inventory_snippet" {
   sensitive   = true
   value       = <<-EOT
     [ob_standalone]
-    ${azurerm_public_ip.pip.ip_address} ansible_user=${var.admin_username} ansible_ssh_private_key_file=${var.ssh_private_key_path}
+    ${azurerm_public_ip.pip.ip_address} ansible_user=${var.admin_username} ansible_port=22 ansible_ssh_private_key_file=${var.ssh_private_key_path}
   EOT
 }
 

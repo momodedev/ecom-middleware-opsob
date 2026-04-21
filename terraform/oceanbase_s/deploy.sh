@@ -17,10 +17,11 @@ echo ""
 echo "=== Step 2: Capture public IP and build Ansible inventory ==="
 PUBLIC_IP=$(terraform output -raw public_ip_address)
 SSH_KEY=$(terraform output -raw ssh_command | awk '{print $3}' | sed 's/-i//' | xargs)
+ANSIBLE_PORT=${ANSIBLE_PORT:-22}
 
 cat > "${ANSIBLE_DIR}/inventory.ini" <<INI
 [ob_standalone]
-${PUBLIC_IP} ansible_user=azureadmin ansible_ssh_private_key_file=~/.ssh/id_rsa
+${PUBLIC_IP} ansible_user=azureadmin ansible_port=${ANSIBLE_PORT} ansible_ssh_private_key_file=${SSH_KEY}
 
 [ob_standalone:vars]
 ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
@@ -33,11 +34,7 @@ INI
 echo "Inventory written to ${ANSIBLE_DIR}/inventory.ini"
 
 echo ""
-echo "=== Step 3: Wait for VM to finish cloud-init (3 min) ==="
-sleep 180
-
-echo ""
-echo "=== Step 4: Run Ansible playbook ==="
+echo "=== Step 3: Run Ansible playbook ==="
 cd "${ANSIBLE_DIR}"
 ansible-playbook -i inventory.ini playbook.yml
 

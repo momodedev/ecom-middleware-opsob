@@ -94,3 +94,9 @@ variable "ob_cluster_name" {
   type        = string
   default     = "ob_standalone"
 }
+
+variable "ob_mount_options" {
+  description = "Filesystem mount options for OceanBase data and redo disks. Keep barrier defaults on Azure managed disks; use noatime for lower metadata overhead."
+  type        = string
+  default     = "defaults,noatime,nodiratime,nofail"
+}

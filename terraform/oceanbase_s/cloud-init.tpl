@@ -30,6 +30,7 @@ packages:
   - lsof
   - rsync
   - openssl
+  - firewalld
 
 runcmd:
   # Ignore Azure SR-IOV NICs that are transparently bonded to synthetic NICs
@@ -52,8 +53,11 @@ runcmd:
   - chown -R ${ob_admin_username}:${ob_admin_username} /home/${ob_admin_username}/.ssh
   - chmod 700 /home/${ob_admin_username}/.ssh
 
-  # Disable firewalld (OceanBase manages its own ports via NSG)
-  - systemctl disable --now firewalld || true
+  # Keep firewalld enabled and open required database ports.
+  - systemctl enable --now firewalld || true
+  - firewall-cmd --permanent --add-port=2881/tcp || true
+  - firewall-cmd --permanent --add-port=2882/tcp || true
+  - firewall-cmd --reload || true
 
   # Disable SELinux permanently
   - sed -i 's/^SELINUX=.*/SELINUX=disabled/' /etc/selinux/config
@@ -65,8 +69,12 @@ runcmd:
     # OceanBase tuning
     fs.aio-max-nr = 1048576
     net.core.somaxconn = 2048
+    net.core.netdev_max_backlog = 10000
+    net.core.rmem_default = 16777216
+    net.core.wmem_default = 16777216
     net.core.rmem_max = 16777216
     net.core.wmem_max = 16777216
+    net.ipv4.tcp_syncookies = 1
     vm.swappiness = 0
     vm.min_free_kbytes = 2097152
     vm.overcommit_memory = 0
@@ -110,18 +118,30 @@ runcmd:
     cat > /usr/local/bin/mount-ob-disks.sh <<'MOUNTEOF'
     #!/bin/bash
     set -e
+    resolve_device() {
+      local primary="$1" fallback="$2"
+      if [ -b "$primary" ]; then
+        echo "$primary"
+      elif [ -b "$fallback" ]; then
+        echo "$fallback"
+      else
+        echo ""
+      fi
+    }
+
     mount_disk() {
       local dev="$1" mp="$2" label="$3"
+      [ -n "$dev" ] || return 0
       if [ -b "$dev" ] && ! blkid "$dev" | grep -q ext4; then
         mkfs.ext4 -L "$label" "$dev"
       fi
       mkdir -p "$mp"
-      grep -q "$mp" /etc/fstab || echo "LABEL=$label $mp ext4 defaults,nofail 0 2" >> /etc/fstab
+      grep -q "$mp" /etc/fstab || echo "LABEL=$label $mp ext4 ${ob_mount_options} 0 2" >> /etc/fstab
       mountpoint -q "$mp" || mount "$mp"
       chown ${ob_admin_username}:${ob_admin_username} "$mp"
     }
-    mount_disk /dev/sdc /oceanbase/data ob-data
-    mount_disk /dev/sdd /oceanbase/redo ob-redo
+    mount_disk "$(resolve_device /dev/disk/azure/scsi1/lun10 /dev/sdc)" /oceanbase/data ob-data
+    mount_disk "$(resolve_device /dev/disk/azure/scsi1/lun11 /dev/sdd)" /oceanbase/redo ob-redo
     MOUNTEOF
   - chmod +x /usr/local/bin/mount-ob-disks.sh
   - /usr/local/bin/mount-ob-disks.sh || true
