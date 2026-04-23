@@ -10,6 +10,7 @@
 - name: Wait for SSH to become available
   hosts: ob_standalone
   gather_facts: false
+  become: false
   tasks:
     - name: Wait for SSH port
       wait_for:
@@ -30,6 +31,8 @@
 
     - name: Wait for cloud-init to finish
       command: cloud-init status --wait
+      become: true
+      become_user: root
       changed_when: false
 
 # -----------------------------------------------------------------------------
@@ -198,15 +201,32 @@
         src: "{{ obd_install_dir }}/oceanbase-all-in-one.tar.gz"
         dest: "{{ obd_install_dir }}"
         remote_src: true
-        creates: "{{ obd_install_dir }}/oceanbase-all-in-one"
 
-    - name: Run OBD install.sh as admin user
-      become_user: "{{ ob_admin_username }}"
+    - name: Locate OBD install.sh
+      find:
+        paths: "{{ obd_install_dir }}"
+        patterns: install.sh
+        file_type: file
+        recurse: true
+      register: obd_install_sh_files
+
+    - name: Set OBD installer directory
+      set_fact:
+        obd_installer_dir: "{{ (obd_install_sh_files.files | map(attribute='path') | list | first) | dirname }}"
+      when: (obd_install_sh_files.files | length) > 0
+
+    - name: Fail when OBD installer script is missing
+      fail:
+        msg: "Unable to find install.sh under {{ obd_install_dir }} after extracting {{ obd_all_in_one_url }}"
+      when: (obd_install_sh_files.files | length) == 0
+
+    - name: Run OBD install.sh as root
+      become_user: root
       shell: |
-        cd {{ obd_install_dir }}/oceanbase-all-in-one
+        cd {{ obd_installer_dir }}
         bash install.sh
       args:
-        creates: "/home/{{ ob_admin_username }}/.oceanbase-all-in-one/bin/obd"
+        creates: "/usr/bin/obd"
 
     # -------------------------------------------------------------------------
     # 2. Write OBD deployment config
@@ -253,7 +273,8 @@
       become_user: "{{ ob_admin_username }}"
       shell: |
         source ~/.oceanbase-all-in-one/bin/env.sh
-        obd cluster deploy {{ ob_cluster_name }} -c ~/ob-standalone.yaml -y
+        # Force deploy allows reusing hosts where data dir contains stale files from previous runs.
+        obd cluster deploy -f {{ ob_cluster_name }} -c ~/ob-standalone.yaml
       args:
         creates: "/home/{{ ob_admin_username }}/.obd/cluster/{{ ob_cluster_name }}"
       register: ob_deploy
@@ -265,6 +286,44 @@
         obd cluster start {{ ob_cluster_name }}
       register: ob_start
       changed_when: "'started' in ob_start.stdout | lower"
+
+    # -------------------------------------------------------------------------
+    # 4. Post-start system parameter tuning
+    # -------------------------------------------------------------------------
+    - name: Apply OceanBase system parameter tuning
+      become_user: "{{ ob_admin_username }}"
+      shell: |
+        source ~/.oceanbase-all-in-one/bin/env.sh
+        obclient -h127.0.0.1 -P{{ ob_mysql_port }} -uroot@sys -p'{{ ob_root_password }}' \
+          -Doceanbase -A 2>/dev/null << 'OBEOF'
+        -- Raise worker thread concurrency to handle high-concurrency RW workloads
+        ALTER SYSTEM SET cpu_quota_concurrency = 16;
+        -- Increase MemStore buffer to reduce minor compaction pressure (60% of memory_limit)
+        ALTER SYSTEM SET memstore_limit_percentage = 60;
+        -- Limit background compaction threads to protect foreground workloads
+        -- (merge_thread_count removed in OceanBase 4.x; use compaction_*_thread_score instead)
+        ALTER SYSTEM SET compaction_mid_thread_score = 2;
+        ALTER SYSTEM SET compaction_low_thread_score = 2;
+        OBEOF
+      register: ob_tune
+      changed_when: true
+
+    - name: Verify applied tuning parameters
+      become_user: "{{ ob_admin_username }}"
+      shell: |
+        source ~/.oceanbase-all-in-one/bin/env.sh
+        obclient -h127.0.0.1 -P{{ ob_mysql_port }} -uroot@sys -p'{{ ob_root_password }}' \
+          -Doceanbase -A -e \
+          "SELECT name, value FROM oceanbase.GV\$OB_PARAMETERS
+           WHERE name IN ('cpu_quota_concurrency','memstore_limit_percentage',
+                          'compaction_mid_thread_score','compaction_low_thread_score')
+           ORDER BY name;" 2>/dev/null
+      register: ob_tune_verify
+      changed_when: false
+
+    - name: Show tuning verification
+      debug:
+        msg: "{{ ob_tune_verify.stdout_lines }}"
 
     - name: Display post-deployment connection info
       debug:
