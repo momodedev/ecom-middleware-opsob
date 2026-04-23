@@ -1,0 +1,19 @@
+﻿================ Auto Benchmark Report ================
+source_csv=ce450_queryopt_fast_20260423_r3_idxpart.csv
+rows=12
+[1] Host Metrics Zero-Value Check
+zero_metric_rows=0
+  OK: cpu_pct/mem_pct/disk_io_mbps are all non-zero
+[2] Knee Thread Per Workload
+  oltp_read_only: knee_thread=200,knee_tps=15707.44,first_drop_thread=none
+  oltp_write_only: knee_thread=100,knee_tps=8097.71,first_drop_thread=200
+  oltp_read_write: knee_thread=100,knee_tps=1375.79,first_drop_thread=200
+[3] RW Degradation Alert (p95 > 200.0ms)
+  ALERT rows=2
+  ALERT: threads=100,tps=1375.79,p95=376.49,avg=72.42,cpu_pct=48.4,disk_io_mbps=40.45
+  ALERT: threads=200,tps=1163.68,p95=559.50,avg=171.64,cpu_pct=38.2,disk_io_mbps=37.64
+[4] Workload Averages
+  oltp_read_only: avg_tps=11621.44,avg_p95=10.38,avg_cpu=80.7,avg_mem=15.2,avg_disk=0.31
+  oltp_write_only: avg_tps=5742.36,avg_p95=41.16,avg_cpu=38.9,avg_mem=15.8,avg_disk=67.91
+  oltp_read_write: avg_tps=1174.94,avg_p95=288.31,avg_cpu=43.2,avg_mem=15.9,avg_disk=38.73
+=======================================================

@@ -1,0 +1,13 @@
+﻿timestamp,label,workload,threads,tps,p95_latency,avg_latency,total_queries,errors,rc,status,cpu_pct,mem_pct,disk_io_mbps
+2026-04-23T05:46:38Z,ce450_queryopt_fast_20260423_r3_idxpart,oltp_read_only,20,6420.85,5.67,3.11,3082720,0,0,ok,53.6,15.9,0.31
+2026-04-23T05:47:13Z,ce450_queryopt_fast_20260423_r3_idxpart,oltp_read_only,50,10630.01,7.43,4.70,5104448,0,0,ok,80.6,15.5,0.28
+2026-04-23T05:47:49Z,ce450_queryopt_fast_20260423_r3_idxpart,oltp_read_only,100,13727.47,10.46,7.28,6594000,0,0,ok,92.1,14.8,0.29
+2026-04-23T05:48:24Z,ce450_queryopt_fast_20260423_r3_idxpart,oltp_read_only,200,15707.44,17.95,12.68,7573024,0,0,ok,96.5,14.6,0.36
+2026-04-23T05:49:00Z,ce450_queryopt_fast_20260423_r3_idxpart,oltp_write_only,20,3469.35,7.30,5.76,624600,0,0,ok,23.9,15.7,39.62
+2026-04-23T05:49:35Z,ce450_queryopt_fast_20260423_r3_idxpart,oltp_write_only,50,6261.55,12.98,7.98,1127682,0,0,ok,41.6,15.7,57.31
+2026-04-23T05:50:11Z,ce450_queryopt_fast_20260423_r3_idxpart,oltp_write_only,100,8097.71,33.72,12.32,1461522,0,0,ok,50.9,15.8,83.57
+2026-04-23T05:50:46Z,ce450_queryopt_fast_20260423_r3_idxpart,oltp_write_only,200,5140.81,110.66,38.80,929058,0,0,ok,39.1,15.8,91.12
+2026-04-23T05:51:22Z,ce450_queryopt_fast_20260423_r3_idxpart,oltp_read_write,20,923.59,20.37,21.65,560620,0,0,ok,35.9,15.9,29.41
+2026-04-23T05:51:58Z,ce450_queryopt_fast_20260423_r3_idxpart,oltp_read_write,50,1236.72,196.89,40.38,752380,0,0,ok,50.1,15.9,47.41
+2026-04-23T05:52:34Z,ce450_queryopt_fast_20260423_r3_idxpart,oltp_read_write,100,1375.79,376.49,72.42,831640,0,0,ok,48.4,15.9,40.45
+2026-04-23T05:53:10Z,ce450_queryopt_fast_20260423_r3_idxpart,oltp_read_write,200,1163.68,559.50,171.64,699800,0,0,ok,38.2,15.9,37.64

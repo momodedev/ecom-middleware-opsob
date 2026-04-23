@@ -55,16 +55,26 @@ SKIP_PREPARE="${SKIP_PREPARE:-0}"
 COLLECT_HOST_METRICS="${COLLECT_HOST_METRICS:-1}"
 THREADS_LIST="${THREADS_LIST:-20 50 100 200}"
 WORKLOADS="${WORKLOADS:-oltp_read_only oltp_write_only oltp_read_write}"
+AUTO_COMPARE_REPORT="${AUTO_COMPARE_REPORT:-1}"
+RW_P95_ALERT_THRESHOLD_MS="${RW_P95_ALERT_THRESHOLD_MS:-200}"
 
 OUTPUT_DIR="${OUTPUT_DIR:-/tmp/oceanbase-bench}"
 CSV_FILE="${OUTPUT_DIR}/${CLUSTER_LABEL}.csv"
 LOG_FILE="${OUTPUT_DIR}/${CLUSTER_LABEL}.log"
+REPORT_FILE="${OUTPUT_DIR}/${CLUSTER_LABEL}.analysis.txt"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AUTO_REPORT_PY="${AUTO_REPORT_PY:-${SCRIPT_DIR}/benchmark_auto_report.py}"
 
-SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_rsa}"
+SSH_KEY="${SSH_KEY:-}"
 SSH_USER="${SSH_USER:-admin}"
 SSH_PORT="${SSH_PORT:-22}"
 SSH_USERS="${SSH_USERS:-${SSH_USER} azureadmin admin root}"
 SSH_PORTS="${SSH_PORTS:-${SSH_PORT} 6666 22}"
+SSH_KEY_CANDIDATES="${SSH_KEY_CANDIDATES:-$HOME/.ssh/id_rsa_vm_ob $HOME/.ssh/id_rsa $HOME/.ssh/id_ed25519}"
+
+if [ -n "$SSH_KEY" ]; then
+  SSH_KEY_CANDIDATES="$SSH_KEY $SSH_KEY_CANDIDATES"
+fi
 
 require_cmd awk
 require_cmd grep
@@ -132,13 +142,22 @@ collect_pre_metrics() {
     local out_file="${snap_dir}/before_${mip}"
     for su in $SSH_USERS; do
       for sp in $SSH_PORTS; do
-        if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes \
-          -i "$SSH_KEY" -p "$sp" "${su}@${mip}" \
-          "head -1 /proc/stat; echo ===SEP===; cat /proc/diskstats" \
-          > "$out_file" 2>/dev/null; then
-          ok=1
-          break
-        fi
+        for sk in $SSH_KEY_CANDIDATES __NO_KEY__; do
+          local ssh_cmd
+          ssh_cmd=(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes -p "$sp")
+          if [ "$sk" != "__NO_KEY__" ] && [ -f "$sk" ]; then
+            ssh_cmd+=( -i "$sk" )
+          elif [ "$sk" != "__NO_KEY__" ]; then
+            continue
+          fi
+          if "${ssh_cmd[@]}" "${su}@${mip}" \
+            "head -1 /proc/stat; echo ===SEP===; cat /proc/diskstats" \
+            > "$out_file" 2>/dev/null; then
+            ok=1
+            break
+          fi
+        done
+        [ "$ok" -eq 1 ] && break
       done
       [ "$ok" -eq 1 ] && break
     done
@@ -160,13 +179,22 @@ collect_post_metrics() {
     local out_file="${snap_dir}/after_${mip}"
     for su in $SSH_USERS; do
       for sp in $SSH_PORTS; do
-        if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes \
-          -i "$SSH_KEY" -p "$sp" "${su}@${mip}" \
-          "head -1 /proc/stat; echo ===SEP===; cat /proc/diskstats; echo ===SEP===; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo" \
-          > "$out_file" 2>/dev/null; then
-          ok=1
-          break
-        fi
+        for sk in $SSH_KEY_CANDIDATES __NO_KEY__; do
+          local ssh_cmd
+          ssh_cmd=(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes -p "$sp")
+          if [ "$sk" != "__NO_KEY__" ] && [ -f "$sk" ]; then
+            ssh_cmd+=( -i "$sk" )
+          elif [ "$sk" != "__NO_KEY__" ]; then
+            continue
+          fi
+          if "${ssh_cmd[@]}" "${su}@${mip}" \
+            "head -1 /proc/stat; echo ===SEP===; cat /proc/diskstats; echo ===SEP===; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo" \
+            > "$out_file" 2>/dev/null; then
+            ok=1
+            break
+          fi
+        done
+        [ "$ok" -eq 1 ] && break
       done
       [ "$ok" -eq 1 ] && break
     done
@@ -239,10 +267,12 @@ compute_metrics() {
     METRIC_CPU=$(awk "BEGIN{printf \"%.1f\",${cpu_sum}/${obs_count}}")
     METRIC_MEM=$(awk "BEGIN{printf \"%.1f\",${mem_sum}/${obs_count}}")
     METRIC_DISK=$(awk "BEGIN{printf \"%.2f\",${disk_sum}/${obs_count}}")
+    METRIC_SAMPLE_OK="1"
   else
     METRIC_CPU="0.0"
     METRIC_MEM="0.0"
     METRIC_DISK="0.00"
+    METRIC_SAMPLE_OK="0"
   fi
 }
 
@@ -277,8 +307,11 @@ log "Threads:   ${THREADS_LIST}"
 log "Workloads: ${WORKLOADS}"
 log "Skip prepare: ${SKIP_PREPARE}"
 log "Collect host metrics: ${COLLECT_HOST_METRICS}"
+log "Auto compare report: ${AUTO_COMPARE_REPORT}"
+log "RW p95 alert threshold(ms): ${RW_P95_ALERT_THRESHOLD_MS}"
 log "CSV:       ${CSV_FILE}"
 log "LOG:       ${LOG_FILE}"
+log "REPORT:    ${REPORT_FILE}"
 log "=========================================="
 
 validate_workloads
@@ -355,10 +388,14 @@ for workload in $WORKLOADS; do
     if [ "$COLLECT_HOST_METRICS" = "1" ]; then
       collect_post_metrics "$snap_dir" || true
       compute_metrics "$snap_dir" "$RUN_TIME"
+      if [ "${METRIC_SAMPLE_OK:-0}" = "0" ]; then
+        log "WARN: host metrics unavailable for case workload=${workload}, threads=${threads}; CSV metrics fields set to 0"
+      fi
     else
       METRIC_CPU="0.0"
       METRIC_MEM="0.0"
       METRIC_DISK="0.00"
+      METRIC_SAMPLE_OK="0"
     fi
     rm -rf "$snap_dir"
 
@@ -392,3 +429,25 @@ fi
 log "All cases succeeded: ${done_cases}/${total_cases}"
 log "=========================================="
 cat "$CSV_FILE"
+
+if [ "$AUTO_COMPARE_REPORT" = "1" ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    PY_BIN="python3"
+  elif command -v python >/dev/null 2>&1; then
+    PY_BIN="python"
+  else
+    PY_BIN=""
+  fi
+
+  if [ -n "$PY_BIN" ] && [ -f "$AUTO_REPORT_PY" ]; then
+    log "[report] Generating auto analysis report..."
+    "$PY_BIN" "$AUTO_REPORT_PY" \
+      --csv "$CSV_FILE" \
+      --output "$REPORT_FILE" \
+      --rw-p95-threshold "$RW_P95_ALERT_THRESHOLD_MS" \
+      | tee -a "$LOG_FILE"
+    log "[report] Done: ${REPORT_FILE}"
+  else
+    log "WARN: auto report skipped (python or report script missing). script=${AUTO_REPORT_PY}"
+  fi
+fi

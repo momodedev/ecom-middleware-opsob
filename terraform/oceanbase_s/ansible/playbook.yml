@@ -4,7 +4,7 @@
 # =============================================================================
 # Usage:
 #   ansible-playbook -i inventory.ini playbook.yml \
-#       [-e ob_root_password=YourPassword] [-e ob_memory_limit=50G]
+#       [-e ob_root_password=YourPassword] [-e ob_memory_limit=58G]
 # =============================================================================
 
 - name: Wait for SSH to become available
@@ -12,23 +12,15 @@
   gather_facts: false
   become: false
   tasks:
-    - name: Wait for SSH port
-      wait_for:
-        port: "{{ ansible_port | default(22) }}"
-        host: "{{ ansible_host }}"
-        delay: 10
+    - name: Wait for SSH to become available (via SSH transport)
+      wait_for_connection:
+        delay: 5
         timeout: 300
-      vars:
-        ansible_connection: local
+        sleep: 10
 
     - name: Verify SSH connectivity
       raw: echo "SSH OK"
-      register: ssh_ok
       changed_when: false
-      retries: 5
-      delay: 10
-      until: ssh_ok.rc == 0
-
     - name: Wait for cloud-init to finish
       command: cloud-init status --wait
       become: true
@@ -169,6 +161,11 @@
   vars:
     ob_mysql_port:      2881
     ob_rpc_port:        2882
+    ob_memory_limit:    "58G"
+    ob_benchmark_db:    "sbtest"
+    ob_optimize_index_partition: true
+    # Index policy for sbtest tables: on=create idx_k_c, off=drop idx_k_c
+    ob_index_strategy: "on"
     ob_home_dir:        "/home/{{ ob_admin_username }}/oceanbase"
     ob_data_dir:        "/oceanbase/data"
     ob_redo_dir:        "/oceanbase/redo"
@@ -296,10 +293,21 @@
         source ~/.oceanbase-all-in-one/bin/env.sh
         obclient -h127.0.0.1 -P{{ ob_mysql_port }} -uroot@sys -p'{{ ob_root_password }}' \
           -Doceanbase -A 2>/dev/null << 'OBEOF'
+        -- Keep memory_limit aligned with host capacity policy for D16s_v6
+        ALTER SYSTEM SET memory_limit = '58G';
         -- Raise worker thread concurrency to handle high-concurrency RW workloads
         ALTER SYSTEM SET cpu_quota_concurrency = 16;
         -- Increase MemStore buffer to reduce minor compaction pressure (60% of memory_limit)
         ALTER SYSTEM SET memstore_limit_percentage = 60;
+        -- Lower freeze trigger to reduce MemStore scan overhead for read-heavy traffic
+        ALTER SYSTEM SET freeze_trigger_percentage = 15;
+        -- Reduce minor compaction frequency for mixed RW pressure
+        ALTER SYSTEM SET minor_compact_trigger = 5;
+        -- Reduce overhead from SQL audit/perf event collection in benchmark mode
+        ALTER SYSTEM SET enable_sql_audit = False;
+        ALTER SYSTEM SET enable_perf_event = False;
+        -- Improve plan reuse behavior under stable benchmark SQL patterns
+        ALTER SYSTEM SET enable_adaptive_plan_cache = True;
         -- Limit background compaction threads to protect foreground workloads
         -- (merge_thread_count removed in OceanBase 4.x; use compaction_*_thread_score instead)
         ALTER SYSTEM SET compaction_mid_thread_score = 2;
@@ -315,7 +323,9 @@
         obclient -h127.0.0.1 -P{{ ob_mysql_port }} -uroot@sys -p'{{ ob_root_password }}' \
           -Doceanbase -A -e \
           "SELECT name, value FROM oceanbase.GV\$OB_PARAMETERS
-           WHERE name IN ('cpu_quota_concurrency','memstore_limit_percentage',
+           WHERE name IN ('memory_limit','cpu_quota_concurrency','memstore_limit_percentage',
+                          'freeze_trigger_percentage','minor_compact_trigger',
+                          'enable_sql_audit','enable_perf_event','enable_adaptive_plan_cache',
                           'compaction_mid_thread_score','compaction_low_thread_score')
            ORDER BY name;" 2>/dev/null
       register: ob_tune_verify
@@ -324,6 +334,110 @@
     - name: Show tuning verification
       debug:
         msg: "{{ ob_tune_verify.stdout_lines }}"
+
+    # -------------------------------------------------------------------------
+    # 5. Index & partition strategy optimization for benchmark schema
+    # -------------------------------------------------------------------------
+    - name: Check index usage baseline via EXPLAIN ANALYZE (sample)
+      become_user: "{{ ob_admin_username }}"
+      shell: |
+        source ~/.oceanbase-all-in-one/bin/env.sh
+        obclient -h127.0.0.1 -P{{ ob_mysql_port }} -uroot@sys -p'{{ ob_root_password }}' \
+          -D{{ ob_benchmark_db }} -A << 'OBEOF'
+        EXPLAIN ANALYZE SELECT id, k, c FROM sbtest1 WHERE k BETWEEN 100 AND 200 ORDER BY k LIMIT 20;
+        OBEOF
+      register: ob_explain_sample
+      changed_when: false
+      failed_when: false
+      when: ob_optimize_index_partition | bool
+
+    - name: Apply index strategy on sbtest tables (create/drop idx_k_c)
+      become_user: "{{ ob_admin_username }}"
+      shell: |
+        set -e
+        source ~/.oceanbase-all-in-one/bin/env.sh
+        obclient -h127.0.0.1 -P{{ ob_mysql_port }} -uroot@sys -p'{{ ob_root_password }}' \
+          -Doceanbase -A -N -e \
+          "SELECT table_name FROM information_schema.tables
+           WHERE table_schema='{{ ob_benchmark_db }}' AND table_name LIKE 'sbtest%'
+           ORDER BY table_name;" 2>/dev/null | while read -r tbl; do
+          [ -n "$tbl" ] || continue
+          idx_cnt=$(obclient -h127.0.0.1 -P{{ ob_mysql_port }} -uroot@sys -p'{{ ob_root_password }}' \
+            -Doceanbase -A -N -e \
+            "SELECT COUNT(*)
+             FROM information_schema.statistics
+             WHERE table_schema='{{ ob_benchmark_db }}'
+               AND table_name='${tbl}'
+               AND index_name='idx_k_c';" 2>/dev/null)
+          if [ "{{ ob_index_strategy }}" = "on" ]; then
+            if [ "${idx_cnt:-0}" = "0" ]; then
+              obclient -h127.0.0.1 -P{{ ob_mysql_port }} -uroot@sys -p'{{ ob_root_password }}' \
+                -D{{ ob_benchmark_db }} -A -e "CREATE INDEX idx_k_c ON ${tbl} (k, c);" 2>/dev/null
+              echo "created:${tbl}:idx_k_c"
+            else
+              echo "exists:${tbl}:idx_k_c"
+            fi
+          else
+            if [ "${idx_cnt:-0}" != "0" ]; then
+              obclient -h127.0.0.1 -P{{ ob_mysql_port }} -uroot@sys -p'{{ ob_root_password }}' \
+                -D{{ ob_benchmark_db }} -A -e "DROP INDEX idx_k_c ON ${tbl};" 2>/dev/null
+              echo "dropped:${tbl}:idx_k_c"
+            else
+              echo "missing:${tbl}:idx_k_c"
+            fi
+          fi
+        done
+      register: ob_index_optimize
+      changed_when: "'created:' in ob_index_optimize.stdout or 'dropped:' in ob_index_optimize.stdout"
+      when: ob_optimize_index_partition | bool
+
+    - name: Check partition strategy and PK/UK subset compliance
+      become_user: "{{ ob_admin_username }}"
+      shell: |
+        source ~/.oceanbase-all-in-one/bin/env.sh
+        obclient -h127.0.0.1 -P{{ ob_mysql_port }} -uroot@sys -p'{{ ob_root_password }}' \
+          -Doceanbase -A << 'OBEOF'
+        SELECT table_name, partition_name, subpartition_name, partition_method
+        FROM information_schema.partitions
+        WHERE table_schema='{{ ob_benchmark_db }}' AND table_name LIKE 'sbtest%'
+        ORDER BY table_name, partition_ordinal_position, subpartition_ordinal_position;
+
+        SELECT kcu.table_name,
+               kcu.constraint_name,
+               GROUP_CONCAT(kcu.column_name ORDER BY kcu.ordinal_position) AS key_columns,
+               IFNULL(GROUP_CONCAT(sp.column_name ORDER BY sp.seq_in_index), '') AS partition_columns,
+               CASE
+                 WHEN COUNT(sp.column_name)=0 THEN 'NO_PARTITION'
+                 ELSE 'CHECK_REQUIRED'
+               END AS partition_key_subset_status
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu
+          ON tc.constraint_schema=kcu.constraint_schema
+         AND tc.table_name=kcu.table_name
+         AND tc.constraint_name=kcu.constraint_name
+        LEFT JOIN information_schema.statistics sp
+          ON sp.table_schema=kcu.table_schema
+         AND sp.table_name=kcu.table_name
+         AND sp.index_name='PRIMARY'
+        WHERE tc.table_schema='{{ ob_benchmark_db }}'
+          AND tc.table_name LIKE 'sbtest%'
+          AND tc.constraint_type IN ('PRIMARY KEY','UNIQUE')
+        GROUP BY kcu.table_name, kcu.constraint_name
+        ORDER BY kcu.table_name, kcu.constraint_name;
+        OBEOF
+      register: ob_partition_check
+      changed_when: false
+      failed_when: false
+      when: ob_optimize_index_partition | bool
+
+    - name: Show index and partition optimization summary
+      debug:
+        msg:
+          - "EXPLAIN ANALYZE sample: {{ (ob_explain_sample.stdout_lines | default([]))[:20] }}"
+          - "Index strategy: {{ ob_index_strategy }}"
+          - "Index optimization summary: {{ ob_index_optimize.stdout_lines | default([]) }}"
+          - "Partition check summary: {{ (ob_partition_check.stdout_lines | default([]))[:40] }}"
+      when: ob_optimize_index_partition | bool
 
     - name: Display post-deployment connection info
       debug:
